@@ -1,0 +1,482 @@
+<!-- 留言板組件 -->
+<div id="messageBoard" class="message-board collapsed">
+    <div class="message-board-header" onclick="toggleMessageBoard()">
+        <span>📋 留言板</span>
+        <span id="pendingCount" class="badge">0</span>
+        <button class="toggle-btn">▼</button>
+    </div>
+
+    <div class="message-board-content">
+        <!-- 新增留言按鈕 -->
+        <button class="btn-add-message" onclick="showAddMessageForm()">
+            ➕ 新增留言
+        </button>
+
+        <!-- 新增留言表單 -->
+        <div id="addMessageForm" class="add-message-form" style="display: none;">
+            <input type="text" id="messageTitle" placeholder="標題" class="form-input">
+            <textarea id="messageContent" placeholder="內容（選填）" class="form-textarea"></textarea>
+            <div class="form-row">
+                <select id="messagePriority" class="form-select">
+                    <option value="low">🟢 一般</option>
+                    <option value="medium" selected>🟡 重要</option>
+                    <option value="high">🔴 緊急</option>
+                </select>
+                <input type="text" id="messageCreator" placeholder="您的名字" class="form-input" style="flex: 1;">
+            </div>
+            <div class="form-actions">
+                <button class="btn-save" onclick="addMessage()">儲存</button>
+                <button class="btn-cancel" onclick="hideAddMessageForm()">取消</button>
+            </div>
+        </div>
+
+        <!-- 留言列表 -->
+        <div id="messageList" class="message-list">
+            <!-- 動態載入 -->
+        </div>
+    </div>
+</div>
+
+<style>
+    /* 留言板樣式 */
+    .message-board {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        width: 350px;
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+        z-index: 1000;
+        transition: all 0.3s ease;
+        max-height: 600px;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .message-board.collapsed {
+        max-height: 50px;
+    }
+
+    .message-board-header {
+        padding: 12px 16px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 12px 12px 0 0;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        user-select: none;
+    }
+
+    .message-board.collapsed .message-board-header {
+        border-radius: 12px;
+    }
+
+    .message-board-header .badge {
+        background: rgba(255, 255, 255, 0.3);
+        padding: 2px 8px;
+        border-radius: 10px;
+        font-size: 12px;
+        font-weight: bold;
+    }
+
+    .toggle-btn {
+        margin-left: auto;
+        background: none;
+        border: none;
+        color: white;
+        font-size: 12px;
+        cursor: pointer;
+        transition: transform 0.3s;
+    }
+
+    .message-board.collapsed .toggle-btn {
+        transform: rotate(-90deg);
+    }
+
+    .message-board-content {
+        padding: 16px;
+        overflow-y: auto;
+        flex: 1;
+        display: none;
+    }
+
+    .message-board:not(.collapsed) .message-board-content {
+        display: block;
+    }
+
+    /* 新增按鈕 */
+    .btn-add-message {
+        width: 100%;
+        padding: 10px;
+        background: #667eea;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 14px;
+        margin-bottom: 12px;
+        transition: all 0.3s;
+    }
+
+    .btn-add-message:hover {
+        background: #5568d3;
+        transform: translateY(-1px);
+    }
+
+    /* 新增表單 */
+    .add-message-form {
+        background: #f8f9ff;
+        padding: 12px;
+        border-radius: 8px;
+        margin-bottom: 12px;
+    }
+
+    .form-input,
+    .form-textarea,
+    .form-select {
+        width: 100%;
+        padding: 8px;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        margin-bottom: 8px;
+        font-size: 13px;
+    }
+
+    .form-textarea {
+        resize: vertical;
+        min-height: 60px;
+    }
+
+    .form-row {
+        display: flex;
+        gap: 8px;
+    }
+
+    .form-actions {
+        display: flex;
+        gap: 8px;
+    }
+
+    .btn-save,
+    .btn-cancel {
+        flex: 1;
+        padding: 8px;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 13px;
+    }
+
+    .btn-save {
+        background: #28a745;
+        color: white;
+    }
+
+    .btn-save:hover {
+        background: #218838;
+    }
+
+    .btn-cancel {
+        background: #e0e0e0;
+        color: #666;
+    }
+
+    .btn-cancel:hover {
+        background: #ccc;
+    }
+
+    /* 留言列表 */
+    .message-list {
+        max-height: 350px;
+        overflow-y: auto;
+    }
+
+    .message-item {
+        background: white;
+        border: 2px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 12px;
+        margin-bottom: 10px;
+        transition: all 0.2s;
+        position: relative;
+    }
+
+    .message-item:hover {
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    .message-item.priority-high {
+        border-color: #dc3545;
+        border-left-width: 4px;
+    }
+
+    .message-item.priority-medium {
+        border-color: #ffc107;
+        border-left-width: 4px;
+    }
+
+    .message-item.priority-low {
+        border-color: #28a745;
+        border-left-width: 4px;
+    }
+
+    .message-item.completed {
+        opacity: 0.6;
+        background: #f5f5f5;
+    }
+
+    .message-header {
+        display: flex;
+        align-items: start;
+        gap: 8px;
+        margin-bottom: 6px;
+    }
+
+    .message-checkbox {
+        width: 18px;
+        height: 18px;
+        cursor: pointer;
+        flex-shrink: 0;
+        margin-top: 2px;
+    }
+
+    .message-title {
+        flex: 1;
+        font-weight: 500;
+        font-size: 14px;
+        color: #333;
+    }
+
+    .message-item.completed .message-title {
+        text-decoration: line-through;
+        color: #999;
+    }
+
+    .message-delete {
+        background: none;
+        border: none;
+        color: #dc3545;
+        cursor: pointer;
+        font-size: 16px;
+        padding: 0 4px;
+        opacity: 0;
+        transition: opacity 0.2s;
+    }
+
+    .message-item:hover .message-delete {
+        opacity: 1;
+    }
+
+    .message-delete:hover {
+        color: #c82333;
+    }
+
+    .message-content {
+        font-size: 13px;
+        color: #666;
+        margin: 6px 0 6px 26px;
+        line-height: 1.4;
+    }
+
+    .message-meta {
+        font-size: 11px;
+        color: #999;
+        margin-left: 26px;
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 40px 20px;
+        color: #999;
+    }
+
+    .empty-state-icon {
+        font-size: 48px;
+        margin-bottom: 10px;
+    }
+</style>
+
+<script>
+    // 留言板功能
+    let messagesData = [];
+    let isCollapsed = true;
+
+    // 切換留言板
+    function toggleMessageBoard() {
+        const board = document.getElementById('messageBoard');
+        isCollapsed = !isCollapsed;
+
+        if (isCollapsed) {
+            board.classList.add('collapsed');
+        } else {
+            board.classList.remove('collapsed');
+        }
+    }
+
+    // 載入留言
+    async function loadMessages() {
+        try {
+            const response = await fetch('/api/messages');
+            const data = await response.json();
+
+            if (data.status === 'success') {
+                messagesData = data.messages;
+                document.getElementById('pendingCount').textContent = data.pending_count;
+                renderMessages();
+            }
+        } catch (error) {
+            console.error('載入留言失敗:', error);
+        }
+    }
+
+    // 渲染留言列表
+    function renderMessages() {
+        const listEl = document.getElementById('messageList');
+
+        if (messagesData.length === 0) {
+            listEl.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-state-icon">📝</div>
+                <p>目前沒有留言</p>
+            </div>
+        `;
+            return;
+        }
+
+        const html = messagesData.map(msg => `
+        <div class="message-item priority-${msg.priority} ${msg.completed ? 'completed' : ''}">
+            <div class="message-header">
+                <input type="checkbox" class="message-checkbox" 
+                       ${msg.completed ? 'checked' : ''}
+                       onchange="toggleComplete('${msg.id}')">
+                <div class="message-title">${escapeHtml(msg.title)}</div>
+                <button class="message-delete" onclick="deleteMessage('${msg.id}')" title="刪除">✕</button>
+            </div>
+            ${msg.content ? `<div class="message-content">${escapeHtml(msg.content)}</div>` : ''}
+            <div class="message-meta">
+                ${formatTime(msg.created_at)} • ${msg.created_by}
+            </div>
+        </div>
+    `).join('');
+
+        listEl.innerHTML = html;
+    }
+
+    // 顯示新增表單
+    function showAddMessageForm() {
+        document.getElementById('addMessageForm').style.display = 'block';
+        document.getElementById('messageTitle').focus();
+    }
+
+    // 隱藏新增表單
+    function hideAddMessageForm() {
+        document.getElementById('addMessageForm').style.display = 'none';
+        document.getElementById('messageTitle').value = '';
+        document.getElementById('messageContent').value = '';
+        document.getElementById('messagePriority').value = 'medium';
+    }
+
+    // 新增留言
+    async function addMessage() {
+        const title = document.getElementById('messageTitle').value.trim();
+        const content = document.getElementById('messageContent').value.trim();
+        const priority = document.getElementById('messagePriority').value;
+        const creator = document.getElementById('messageCreator').value.trim() || '使用者';
+
+        if (!title) {
+            alert('請輸入標題');
+            return;
+        }
+
+        try {
+            const response = await fetch('/api/messages', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    type: 'todo',
+                    priority: priority,
+                    title: title,
+                    content: content,
+                    created_by: creator
+                })
+            });
+
+            const data = await response.json();
+
+            if (data.status === 'success') {
+                hideAddMessageForm();
+                loadMessages();
+            } else {
+                alert('新增失敗：' + data.error);
+            }
+        } catch (error) {
+            alert('新增錯誤：' + error);
+        }
+    }
+
+    // 切換完成狀態
+    async function toggleComplete(msgId) {
+        try {
+            const response = await fetch(`/api/messages/${msgId}/complete`, {
+                method: 'PUT'
+            });
+
+            const data = await response.json();
+
+            if (data.status === 'success') {
+                loadMessages();
+            }
+        } catch (error) {
+            console.error('更新失敗:', error);
+        }
+    }
+
+    // 刪除留言
+    async function deleteMessage(msgId) {
+        if (!confirm('確定要刪除這則留言？')) return;
+
+        try {
+            const response = await fetch(`/api/messages/${msgId}`, {
+                method: 'DELETE'
+            });
+
+            const data = await response.json();
+
+            if (data.status === 'success') {
+                loadMessages();
+            }
+        } catch (error) {
+            console.error('刪除失敗:', error);
+        }
+    }
+
+    // 工具函數
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    function formatTime(isoString) {
+        const date = new Date(isoString);
+        const now = new Date();
+        const diff = now - date;
+
+        if (diff < 60000) return '剛剛';
+        if (diff < 3600000) return Math.floor(diff / 60000) + '分鐘前';
+        if (diff < 86400000) return Math.floor(diff / 3600000) + '小時前';
+        if (diff < 604800000) return Math.floor(diff / 86400000) + '天前';
+
+        return date.toLocaleDateString('zh-TW', { month: '2-digit', day: '2-digit' });
+    }
+
+    // 初始化
+    document.addEventListener('DOMContentLoaded', () => {
+        loadMessages();
+        // 每30秒自動刷新
+        setInterval(loadMessages, 30000);
+    });
+</script>

@@ -1,0 +1,786 @@
+import json
+import os
+import re
+from datetime import datetime
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+import google.generativeai as genai
+from PIL import Image
+import io
+from google_services import GoogleServices
+from gmail_helper import GmailHelper
+from chat_logger import ChatLogger
+from weather_helper import WeatherHelper
+
+class HotelBot:
+    def __init__(self, knowledge_base_path, persona_path):
+        self.knowledge_base = self._load_json(knowledge_base_path)
+        self.persona = self._load_text(persona_path)
+        
+        # Initialize Google Services
+        self.google_services = GoogleServices()
+        self.gmail_helper = GmailHelper(self.google_services)
+        
+        # Initialize Weather Helper
+        self.weather_helper = WeatherHelper()
+        
+        # Initialize Logger
+        self.logger = ChatLogger()
+        
+        # Initialize User Sessions
+        self.user_sessions = {}
+        self.user_context = {}  # Store temporary context like pending order IDs
+        self.current_user_id = None  # 當前對話的用戶 ID，用於工具調用
+        
+        # Configure Gemini
+        api_key = os.getenv("GOOGLE_API_KEY")
+        if not api_key:
+            print("Warning: GOOGLE_API_KEY is not set. AI features will not work.")
+        else:
+            genai.configure(api_key=api_key)
+            
+            # Define Tools for Gemini
+            # Define Tools for Gemini
+            self.tools = [self.check_order_status, self.get_weather_forecast, self.get_weekly_forecast, self.update_guest_info]
+            
+            # Construct System Instruction
+            kb_str = json.dumps(self.knowledge_base, ensure_ascii=False, indent=2)
+            self.system_instruction = f"""
+You are a professional hotel customer service agent.
+
+Your Persona:
+{self.persona}
+
+Your Knowledge Base (FAQ):
+{kb_str}
+
+**CRITICAL INSTRUCTION FOR ORDER VERIFICATION:**
+1. **TRIGGER RULE**: If the user's message contains **ANY** sequence of digits (5 digits or more) or text resembling an **Order ID**, you **MUST** immediately assume they want to **check the status** of that order.
+   - Even if they say "I have a booking" (statement), treat it as "Check this booking" (command).
+   - DO NOT reply with pleasantries like "Have a nice trip" without checking.
+   - **ANTI-HALLUCINATION WARNING**: You DO NOT have an internal database of orders. You CANNOT know who "1673266483" belongs to without using the tool.
+   - If you generate a response containing a Name or Date WITHOUT calling `check_order_status`, you are FAILING.
+   - **ALWAYS** call the tool.
+   
+2. Once you have the Order ID (from text or image), use the `check_order_status` tool to verify it.
+3. **Tool Output Analysis**:
+   - The tool will return the email body.
+   - **Verification Rule**: If the tool finds an email where the Order ID (or a continuous 6-digit sequence) matches, consider it a **VALID ORDER**.
+   - **Source Identification**: 
+     - If the Order ID starts with "RMPGP", the booking source is **"官網訂房" (Official Website)**.
+     - Otherwise, identify the source from the email content (e.g., Agoda, Booking.com).
+   - **Information Extraction**: Extract the following details from the email body:
+     - **訂房人大名 (Booker Name)**
+     - **入住日期 (Check-in Date)** (Format: YYYY-MM-DD)
+     - **退房日期 (Check-out Date)** (Format: YYYY-MM-DD)
+     - **入住天數 (Number of Nights)** (Calculate from dates if not explicitly stated)
+     - **預訂房型名稱 & 數量 (Room Type & Quantity)**
+     - **是否有含早餐 (Breakfast included?)**
+     - **聯絡電話 (Phone Number)**
+
+   - **Room Type Normalization (房型核對)**:
+     - **Valid Room Types**: [標準雙人房, 標準三人房, 標準四人房, 經典雙人房, 經典四人房, 行政雙人房, 豪華雙人房, 海景雙人房, 海景四人房, 親子家庭房, ＶＩＰ四人房, 無障礙雙人房, 無障礙四人房]
+     - **Action**: Map the extracted room type to the closest match in the Valid Room Types list. If it matches one of them, display that specific name.
+
+3. **Order Retrieval Protocol (Strict 2-Step)**:
+    - **Step 1: Identification**: When a user provides a number (even a partial one), call `check_order_status(order_id=..., user_confirmed=False)`.
+    - **Step 2: Confirmation**: 
+       - If tool returns `"status": "confirmation_needed"`, YOU MUST ask: "我幫您找到了訂單編號 [Found ID]，請問是這筆嗎？"
+       - **CRITICAL EXCEPTION**: If the tool returns `"status": "found"` (meaning it Auto-Confirmed), **SKIP** asking "Is this correct?". Proceed IMMEDIATELY to presenting the details.
+    - **Step 3: Revelation**: ONLY after user confirmation OR Auto-Confirm, show the details.
+    - **Step 4: Presentation**: If the tool returns details, present them clearly AND include the Order ID in the summary.
+    - **Privacy**: If the tool returns "blocked", politely refuse to show details based on privacy rules.
+
+4. **Privacy & Hallucination Rules**:
+    - NEVER invent order details. If tool says "blocked" or "not_found", trust it.
+    - For past orders, say: "不好意思，基於隱私與資料保護原則，我無法提供過往日期的訂單內容。若您有相關需求，請直接聯繫櫃台，謝謝。" (Privacy Standard Response).
+6. **Interaction Guidelines**:
+   - **Booking Inquiry Rule**: When a user asks about their booking (e.g., "I want to check my reservation"), you MUST **ONLY** ask for the **Order Number** (訂單編號).
+   - **STRICT PROHIBITION**: Do **NOT** ask for the user's Name or Check-in Date. Asking for these is a violation of protocol.
+   - **Reasoning**: We filter strictly by Order ID for accuracy and privacy.
+   - If the user provides Name/Date voluntarily, ignore it for search purposes and politely ask for the Order ID again if missing.
+       - 入住日期 (顯示格式：YYYY-MM-DD，並註明 **共 X 晚**)
+       - 房型 (顯示核對後的標準房型名稱)       - 預訂房型/數量
+       - 早餐資訊
+      - **Weather Reminder (REQUIRED - MUST ATTEMPT)**:
+        - **ALWAYS** use the extracted **Check-in Date** to call the `get_weather_forecast` tool.
+        - **Priority**: Call this tool RIGHT AFTER showing order details, BEFORE asking for phone verification.
+        - **Condition**:
+          - If the tool returns valid weather info (e.g., "入住當天車城鄉天氣..."): 
+            → Include it in your response: "溫馨提醒：入住當天車城鄉天氣預報為[天氣詳情]（資料來源：中央氣象署）"
+          - If the tool returns an error or says data is unavailable (e.g., "日期太遠", "無法查詢", "查無資料"): 
+            → Simply skip weather mention, DO NOT show error messages to user.
+        - **Example**: 
+          User order check-in date: 2025-12-10
+          → Call get_weather_forecast("2025-12-10")
+          → If successful: Append weather info to response
+          → If failed: Continue without weather mention
+       
+       - **CRITICAL - Context Tracking Rules**:
+         - ALWAYS remember the most recent order_id mentioned in the conversation
+         - **Order Switch Detection**: If user queries a NEW order while discussing another order:
+           * Example: User is discussing Order A, then suddenly asks about Order B
+           * You MUST reset the context to the NEW order
+           * Previous order's uncompleted information collection should be abandoned
+           * Start fresh data collection for the NEW order
+         - Even if the conversation topic changes (user asks about parking, facilities, weather, etc.),
+           when they provide arrival time or special requests, ALWAYS use the LAST mentioned order_id
+         - Example flow:
+           * User provides order: "1676006502" → Remember order_id='1676006502'
+           * Bot shows order info, asks: "請問幾點抵達？"
+           * User suddenly asks: "停車位" ← topic changes, but KEEP order_id='1676006502' in memory
+           * Bot answers parking question
+           * User finally answers: "大約下午" ← this is the arrival time answer!
+           * Bot MUST call: update_guest_info(order_id='1676006502', info_type='arrival_time', content='大約下午')
+         - **CRITICAL**: If user provides a NEW order number, immediately switch context to that order
+           * Example: User queries "1676006502", then queries "9999999999"
+           * You must use "9999999999" for any subsequent data collection
+         - DO NOT lose context just because the user changed topics temporarily!
+       
+       - **Phone Verification**:
+         - If a phone number is found in the email: "系統顯示您的聯絡電話為 [Phone Number]，請問是否正確？"
+           - If user confirms it's correct: Do nothing (already saved)
+           - If user provides a different/corrected number: Use `update_guest_info(order_id, 'phone', corrected_number)`
+         - If NO phone number is found: "系統顯示您的訂單缺少聯絡電話，請問方便提供您的聯絡電話嗎？"
+           - When user provides phone number: Use `update_guest_info(order_id, 'phone', phone_number)`
+       
+       - **Arrival Time Collection (REQUIRED)**:
+         - **ALWAYS** ask after phone verification: "請問您預計幾點抵達呢？"
+         - **CRITICAL - MUST CALL FUNCTION**: When user provides time, IMMEDIATELY call:
+           update_guest_info(order_id=<LAST_MENTIONED_ORDER_ID>, info_type='arrival_time', content=<user_exact_words>)
+         - **DO NOT** just say you will note it - ACTUALLY CALL THE FUNCTION!
+         
+         - **Time Clarity Check** (NEW):
+           * If user gives vague time ("下午", "晚上", "傍晚"), ASK for specific time:
+             "好的，了解您大約下午會抵達。為了更準確安排，請問大約是下午幾點呢？（例如：下午2點、下午3點等）"
+           * If user gives specific time ("下午3點", "15:00", "3pm"), accept it directly
+           * ALWAYS call update_guest_info regardless - save what they said first, then ask for clarity if needed
+       
+       - **Special Requests Collection (CRITICAL - MUST SAVE ALL)**:
+         - After collecting arrival time, ask: "請問有什麼其他需求或特殊要求嗎？（例如：嬰兒床、高樓層、禁菸房等）"
+         - **CRITICAL**: ANY user request mentioned during the conversation MUST be saved!
+         - Examples of requests that MUST be saved:
+           * 停車位需求 → call update_guest_info(order_id, 'special_need', '需要停車位')
+           * 床型要求 ("我要兩張床") → save it!
+           * 樓層要求 ("高樓層") → save it!
+           * 設施需求 ("需要嬰兒床") → save it!
+           * 任何特殊要求 → save it!
+         - If user says "沒有" or "好" (just acknowledgment): Do not save
+         - **Note**: Special requests are stored in an array, so multiple requests can be accumulated.
+         - After saving, always thank them: "好的，已為您記錄！"
+         
+         - **Bed Type Inquiries (IMPORTANT - Database Rules)**:
+           When user asks about bed configuration, you MUST:
+           1. **Follow Database Rules** - Only these combinations are possible:
+              • 標準雙人房: 兩小床
+              • 標準三人房: 三小床 OR 一大床+一小床  
+              • 標準四人房: 兩大床 OR 兩小床+一大床 OR 四小床
+           2. **Ask to clarify their preference** if they mention bed type
+           3. **Record their request** using update_guest_info(order_id, 'special_need', '床型需求：XXX')
+           4. **Use CAREFUL wording** - NEVER guarantee arrangement:
+              ✅ CORRECT: "好的，已為您記錄床型需求：XXX。館方會盡力為您安排，但仍需以實際房況為準。"
+              ❌ WRONG: "好的，我們會為您安排 XXX" (too absolute)
+              ❌ WRONG: "已經為您確認 XXX" (cannot guarantee)
+           5. **If request is IMPOSSIBLE** (e.g., user wants 3 small beds in 雙人房):
+              Politely inform: "標準雙人房只能提供兩小床的配置。若您需要三小床，建議預訂標準三人房。我可以為您記錄此需求嗎？"
+       
+       - **MANDATORY Important Notices (ALWAYS show after completing guest info collection)**:
+        After collecting all guest information (phone, arrival time, special requests), you MUST inform the guest of the following two important points:
+        
+        📌 **環保政策提醒**:
+        "配合減塑／環保政策，我們旅館目前不提供任何一次性備品（如小包裝牙刷、牙膏、刮鬍刀、拖鞋等）。
+        
+        房內仍提供可重複使用的洗沐用品（大瓶裝或壁掛式洗髮乳、沐浴乳）與毛巾等基本用品。
+        
+        若您習慣使用自己的盥洗用品，建議旅途前記得自備。
+        
+        謝謝您的理解與配合，一起為環保盡一份心力 🌱"
+        
+        🅿️ **停車流程提醒**:
+        "為了讓您的入住流程更順暢，請於抵達當日先至櫃檯辦理入住登記，之後我們的櫃檯人員將會協助引導您前往停車位置 🅿️
+        
+        感謝您的配合，我們期待為您提供舒適的入住體驗。"
+        
+        **CRITICAL**: These notices are MANDATORY and must be shown every time after order confirmation is complete. Do not skip them.
+    - **If Order NOT Found**:
+     - Apologize and ask them to double-check the ID.
+
+**General Instructions:**
+1. **STRICTLY** answer the user's question based **ONLY** on the provided Knowledge Base.
+2. **DO NOT** use any outside knowledge, assumptions, or general information about hotels.
+3. **FORMATTING RULE**: Do NOT use Markdown syntax (**, *, _, etc.) in your responses. Use plain text only. LINE does not support Markdown formatting.
+4. If the answer is NOT explicitly found in the Knowledge Base, you **MUST** reply with the following apology template (in Traditional Chinese):
+   "不好意思，關於這個問題我目前沒有相關資訊。請問方便留下您的訂單編號或入住房號，以便我們後續與您聯繫嗎？"
+4. Reply in Traditional Chinese (繁體中文).
+
+**Weather Query Instructions:**
+1. If the user asks for **current weather** or weather for a **specific date** (e.g., "今天天氣", "明天天氣", "12/25天氣"), use `get_weather_forecast(date_str)`.
+2. If the user asks for **weekly weather**, **future weather**, or **general forecast** (e.g., "一週天氣", "未來天氣", "天氣預報"), use `get_weekly_forecast()`.
+3. **ALWAYS** ensure the response includes the data source attribution: "(資料來源：中央氣象署)".
+"""
+            
+            
+            # Configure safety settings to avoid over-blocking normal hotel conversations
+            from google.generativeai.types import HarmCategory, HarmBlockThreshold
+            
+            safety_settings = {
+                HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+                HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+                HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+                HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE
+            }
+            
+            # Generation config for more deterministic function calling
+            generation_config = {
+                'temperature': 0.2,  # Lower temperature for more consistent function calling
+                'top_p': 0.8,
+                'top_k': 20,
+            }
+            
+            # Main model for conversation and function calling
+            self.model = genai.GenerativeModel(
+                model_name='gemini-2.0-flash-exp',
+                tools=self.tools,
+                system_instruction=self.system_instruction,
+                safety_settings=safety_settings,
+                generation_config=generation_config
+            )
+            print("✅ HotelBot initialized.")
+            
+            # Vision model for OCR tasks (keep 2.0, already excellent)
+            self.vision_model = genai.GenerativeModel(
+                'gemini-2.0-flash',
+                safety_settings=safety_settings
+            )
+            
+            # Privacy validator - upgraded to 2.5 for better date parsing
+            self.validator_model = genai.GenerativeModel(
+                'gemini-2.5-flash',
+                safety_settings=safety_settings
+            )
+            
+        print("系統啟動：旅館專業客服機器人 (AI Vision + Function Calling + Multi-User + Logging + Weather版) 已就緒。")
+
+    def _load_json(self, path):
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Error loading knowledge base: {e}")
+            return {"faq": []}
+
+    def _load_text(self, path):
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                return f.read()
+        except Exception as e:
+            print(f"Error loading persona: {e}")
+            return ""
+
+    # --- Tools for Gemini ---
+    def check_order_status(self, order_id: str, user_confirmed: bool = False):
+            """
+            Checks the status of an order.
+            
+            Args:
+                order_id: The order ID provided by the user (or the confirmed full ID).
+                user_confirmed: Set to True ONLY after the user explicitly says "Yes" to the found order ID. Default is False.
+            
+            Returns:
+                Dict with status.
+                - If confirmed=False, returns 'confirmation_needed' and the Found ID.
+                - If confirmed=True, returns full details (after privacy check).
+            """
+            print(f"🔧 Tool Called: check_order_status(order_id={order_id}, confirmed={user_confirmed})")
+            
+            # Clean input
+            order_id = order_id.strip()
+
+            # 1. Search Logic
+            order_info = self.gmail_helper.search_order(order_id)
+            
+            if not order_info:
+                return {"status": "not_found", "order_id": order_id}
+
+            found_subject = order_info.get('subject', 'Unknown')
+            # Extract NUMERIC-ONLY order ID from subject (ignore prefixes like RMAG, RMPGP)
+            found_id = order_info.get('order_id', 'Unknown')
+            
+            # Always try to extract the most complete NUMERIC order ID from subject
+            import re
+            # Look for long numeric sequences (10+ digits preferred, min 6 digits)
+            patterns = [
+                r'訂單編號[：:]?\s*(?:[A-Z]+)?(\d{6,})',  # Optional colon
+                r'編號[：:]?\s*(?:[A-Z]+)?(\d{6,})',
+                r'Booking\s+ID[：:]?\s*(?:[A-Z]+)?(\d{6,})',
+                r'\b(?:RM[A-Z]{2})?(\d{10,})\b',  # Optional RMAG prefix
+                r'\b(\d{10,})\b'  # Pure long number
+            ]
+            
+            extracted_id = None
+            for pattern in patterns:
+                match = re.search(pattern, found_subject)
+                if match:
+                    extracted = match.group(1)  # Get ONLY the digits
+                    # Verify this contains the user's query
+                    if order_id in extracted or extracted in order_id:
+                        extracted_id = extracted
+                        print(f"📋 Extracted numeric order ID: {extracted_id}")
+                        break
+            
+            # Use extracted numeric ID if it's longer/more complete
+            if extracted_id:
+                # Remove any non-digit characters from extracted_id
+                extracted_id = re.sub(r'\D', '', extracted_id)
+                if found_id == 'Unknown' or len(extracted_id) > len(re.sub(r'\D', '', found_id)):
+                    found_id = extracted_id
+            elif found_id == 'Unknown':
+                # Final fallback: extract digits from order_id or subject
+                numeric_only = re.sub(r'\D', '', order_id)
+                if numeric_only:
+                    found_id = numeric_only
+                else:
+                    found_id = order_id
+            
+            # 2. Confirmation Step (Safety + Correctness)
+            if not user_confirmed:
+                # Check for "Strong Match" to potentially skip manual confirmation
+                # User Request: "If number matches exactly (ignoring prefix), accept it."
+                # Logic: If order_id is long enough (>= 9 digits) and appears in found_id, auto-confirm.
+                is_strong_match = len(order_id) >= 9 and (order_id in found_subject or (found_id != 'Unknown' and order_id in found_id))
+                
+                print(f"🔍 Match Debug: ID={order_id}, Found={found_id}, Subject={found_subject}, StrongMatch={is_strong_match}")
+                
+                if is_strong_match:
+                     print(f"🤖 Auto-Confirming Strong Match: {order_id}")
+                     user_confirmed = True # Proceed directly to Step 3
+                else:
+                    # We found something, but we must verify with the user first.
+                    # We return only safe metadata, NO details.
+                    return {
+                        "status": "confirmation_needed",
+                        "found_order_id": found_id,
+                        "found_subject": found_subject,
+                        "message": f"I found an order with ID {found_id}. Please ask the user if this is correct."
+                    }
+
+            # 3. Privacy & Detail Step (Only if Confirmed)
+            # STRICT PRIVACY CHECK (LLM-based)
+            # Policy Update: Only block if check-in date is > 5 days in the past.
+            body = order_info.get('body', '')
+            today_str = datetime.now().strftime("%Y-%m-%d")
+
+            # Remove sensitive blocks first (CSS/Script)
+            clean_body = re.sub(r'<style.*?>.*?</style>', '', body, flags=re.DOTALL | re.IGNORECASE)
+            clean_body = re.sub(r'<script.*?>.*?</script>', '', clean_body, flags=re.DOTALL | re.IGNORECASE)
+            # Remove remaining tags
+            clean_body = re.sub(r'<[^>]+>', ' ', clean_body)
+            # Collapse whitespace
+            clean_body = re.sub(r'\s+', ' ', clean_body).strip()
+            
+            print(f"📧 Cleaned Email Body Preview (First 500 chars):\n{clean_body[:500]}") # Debug Log
+
+            validation_prompt = f"""
+            Task: Check-in Date Privacy Verification.
+            
+            Current Date: {today_str}
+            Email Text Content:
+            {clean_body[:3000]}
+            
+            Instructions:
+            1. Search for "Check-in" or "入住日期" in the content.
+            2. Extract the date text (e.g., "Dec 6, 2025" or "2025-12-06").
+            3. Parse it to YYYY-MM-DD.
+            4. Calculate DAYS_AGO = Current Date - Check-in Date.
+            5. Logic:
+               - If DAYS_AGO <= 5: ALLOW (Result: YES)
+               - If DAYS_AGO > 5: BLOCK (Result: NO)
+               - If Date Not Found: BLOCK (Result: NO)
+            
+            Output Required Format:
+            REASON: [Found Date: X, Days Ago: Y, Decision: Valid/Invalid because...]
+            RESULT: [YES/NO]
+            """
+            
+            try:
+                # Use the Validator Model
+                validator_response = self.validator_model.generate_content(validation_prompt)
+                full_response = validator_response.text.strip()
+                print(f"🤔 Validator Thought Process:\n{full_response}")
+                
+                # Parse Result (handle both "RESULT: YES" and "RESULT: [YES]")
+                match = re.search(r'RESULT:\s*\[?(YES|NO)\]?', full_response, re.IGNORECASE)
+                result = match.group(1).upper() if match else 'NO'
+                
+                print(f"🔒 Privacy Validator Final Decision: {result} (Today: {today_str})")
+                
+                if result != 'YES':
+                     # Block it
+                     print(f"🚫 Blocking Old Order (Over 5 days): {found_id}")
+                     return {
+                        "status": "blocked",
+                        "reason": "privacy_protection",
+                        "message": "System Alert: This order is historical (Check-in > 5 days ago). Access Denied."
+                    }
+                
+            except Exception as e:
+                # FAIL SAFE: If validation fails, BLOCK access rather than allowing.
+                return {
+                    "status": "blocked",
+                    "reason": "system_error",
+                    "message": "System Alert: Privacy verification system encountered an error. Access temporarily denied to prevent data leak."
+                }
+
+            # PASSED! User is allowed to see the order details.
+            print(f"✅ Privacy Check Passed for Order: {found_id}")
+            
+            # 儲存訂單資料到 JSON（新功能）
+            order_data = {
+                'order_id': found_id,
+                'line_user_id': self.current_user_id,  # 添加用戶 ID
+                'subject': found_subject,
+                'body': clean_body,
+                'check_in': None,  # 稍後由 LLM 提取
+                'check_out': None,
+                'room_type': None,
+                'guest_name': None,
+                'booking_source': None
+            }
+            
+            # 嘗試從 body 提取基本資訊（簡易版）
+            import re as regex_lib
+            from datetime import datetime as dt
+            
+            # 提取入住日期（支援多種格式）
+            # Format 1: "6-Dec-2025" or "06-Dec-2025"
+            checkin_match = regex_lib.search(r'Check-in.*?(\d{1,2}-[A-Za-z]{3}-\d{4})', clean_body)
+            if checkin_match:
+                try:
+                    # 轉換為標準格式 YYYY-MM-DD
+                    date_obj = dt.strptime(checkin_match.group(1), '%d-%b-%Y')
+                    order_data['check_in'] = date_obj.strftime('%Y-%m-%d')
+                except:
+                    pass
+            
+            # Format 2: "2025-12-06" (備用)
+            if not order_data['check_in']:
+                checkin_match2 = regex_lib.search(r'Check-in.*?(\d{4}-\d{2}-\d{2})', clean_body)
+                if checkin_match2:
+                    order_data['check_in'] = checkin_match2.group(1)
+            
+            # 提取退房日期（支援多種格式）
+            checkout_match = regex_lib.search(r'Check-out.*?(\d{1,2}-[A-Za-z]{3}-\d{4})', clean_body)
+            if checkout_match:
+                try:
+                    date_obj = dt.strptime(checkout_match.group(1), '%d-%b-%Y')
+                    order_data['check_out'] = date_obj.strftime('%Y-%m-%d')
+                except:
+                    pass
+            
+            if not order_data['check_out']:
+                checkout_match2 = regex_lib.search(r'Check-out.*?(\d{4}-\d{2}-\d{2})', clean_body)
+                if checkout_match2:
+                    order_data['check_out'] = checkout_match2.group(1)
+            
+            # 提取客人姓名
+            # 只提取 First Name，避免包含 "Customer Last Name" 等文字
+            name_match = regex_lib.search(r'Customer First Name.*?[：:]\s*([A-Za-z\s]+?)(?:\s+Customer|$)', clean_body)
+            if name_match:
+                order_data['guest_name'] = name_match.group(1).strip()
+            else:
+                # 備用：嘗試從「姓名:」提取
+                name_match2 = regex_lib.search(r'姓名[：:]\s*([^\n,]+?)(?:\s*,|\s*電話|$)', clean_body)
+                if name_match2:
+                    order_data['guest_name'] = name_match2.group(1).strip()
+                else:
+                    order_data['guest_name'] = None
+
+            
+            # 提取電話號碼（支援多種格式）
+            # Format 1: "電話: 0912345678" 或 "電話：0912345678"
+            phone_match = regex_lib.search(r'電話[：:]\s*(09\d{8})', clean_body)
+            if not phone_match:
+                # Format 2: 單獨出現的手機號碼
+                phone_match = regex_lib.search(r'\b(09\d{8})\b', clean_body)
+            if phone_match:
+                order_data['phone'] = phone_match.group(1)
+            else:
+                order_data['phone'] = None
+            
+            # 提取房型（支援多種格式）
+            # 直接查找 "Standard/Deluxe/etc + Room" 模式
+            room_match = regex_lib.search(r'\b((?:Standard|Deluxe|Superior|Executive|Family|VIP|Premium|Classic|Ocean View|Sea View|Economy|Accessible|Disability Access)\s+(?:Single|Double|Twin|Triple|Quadruple|Family|Suite|Queen Room)?\s*(?:Room|Suite)?[^,\n]*?(?:Non-Smoking|Smoking|with.*?View|with.*?Balcony)?)', clean_body, regex_lib.IGNORECASE)
+            
+            if not room_match:
+                # 備用：查找特定房型關鍵字
+                room_match = regex_lib.search(r'\b(Quadruple Room - Disability Access|Double Room - Disability Access|Double Room with Balcony and Sea View|Quadruple Room with Sea View|Superior Queen Room with Two Queen Beds)', clean_body, regex_lib.IGNORECASE)
+            
+            if room_match:
+                raw_room_type = room_match.group(1).strip()
+                # 清理尾部數字和多餘文字
+                raw_room_type = regex_lib.sub(r'\s+\d+\s*$', '', raw_room_type)
+                raw_room_type = regex_lib.sub(r'\s+No\..*$', '', raw_room_type)
+                raw_room_type = regex_lib.sub(r'\s+', ' ', raw_room_type).strip()
+                
+                # 載入房型對應表
+                try:
+                    import json as json_lib
+                    base_dir = os.path.dirname(os.path.abspath(__file__))
+                    mapping_file = os.path.join(base_dir, 'room_type_mapping.json')
+                    with open(mapping_file, 'r', encoding='utf-8') as f:
+                        room_mapping = json_lib.load(f)['room_type_mapping']
+                    
+                    # 查找對應的內部代號
+                    if raw_room_type in room_mapping:
+                        order_data['room_type'] = room_mapping[raw_room_type]
+                    else:
+                        # 如果找不到精確匹配，保留原始名稱
+                        order_data['room_type'] = raw_room_type
+                except Exception as e:
+                    print(f"⚠️ 無法載入房型對應表: {e}")
+                    order_data['room_type'] = raw_room_type
+            else:
+                order_data['room_type'] = None
+            
+            # 提取訂房來源
+            if 'agoda' in clean_body.lower():
+                order_data['booking_source'] = 'Agoda'
+            elif 'booking.com' in clean_body.lower():
+                order_data['booking_source'] = 'Booking.com'
+            
+            # 儲存訂單
+            try:
+                self.logger.save_order(order_data)
+                print(f"💾 Order {found_id} saved to database")
+                
+                # 建立訂單與 LINE 用戶的關聯
+                if self.current_user_id:
+                    self.logger.link_order_to_user(found_id, self.current_user_id)
+                    print(f"🔗 Order {found_id} linked to LINE User {self.current_user_id}")
+            except Exception as e:
+                print(f"⚠️ Failed to save order: {e}")
+            
+            # Return FULL details
+            return {
+                "status": "found",
+                "order_id": found_id,
+                "subject": found_subject,
+                "body": clean_body
+            }
+
+
+    def update_guest_info(self, order_id: str, info_type: str, content: str):
+        """
+        Updates guest information for an existing order.
+        
+        Args:
+            order_id: The order ID
+            info_type: Type of information ('phone', 'arrival_time', 'special_need')
+            content: The content to update
+        
+        Returns:
+            Dict with success status
+        """
+        print(f"🔧 Tool Called: update_guest_info(order_id={order_id}, type={info_type}, content={content})")
+        
+        # 驗證訂單是否存在
+        if order_id not in self.logger.orders:
+            return {
+                "status": "error",
+                "message": f"Order {order_id} not found in database. Please check the order first."
+            }
+        
+        # 更新資料
+        success = self.logger.update_guest_request(order_id, info_type, content)
+        
+        if success:
+            print(f"✅ Successfully updated {info_type} for order {order_id}")
+            return {
+                "status": "success",
+                "message": f"Successfully saved {info_type}"
+            }
+        else:
+            print(f"❌ Failed to update {info_type} for order {order_id}")
+            return {
+                "status": "error",
+                "message": "Failed to save information. Please try again."
+            }
+
+
+    def get_weather_forecast(self, date_str: str):
+        """
+        Gets the weather forecast for Checheng Township on a specific date.
+        :param date_str: Date in 'YYYY-MM-DD' format.
+        """
+        print(f"🔧 Tool Called: get_weather_forecast(date_str={date_str})")
+        return self.weather_helper.get_weather_forecast(date_str)
+
+    def get_weekly_forecast(self):
+        """
+        Gets the weekly weather forecast for Checheng Township.
+        Returns a formatted string with 7-day forecast.
+        """
+        print(f"🔧 Tool Called: get_weekly_forecast()")
+        return self.weather_helper.get_weekly_forecast()
+
+    def handle_image(self, user_id, image_data, display_name=None):
+        """Handles image input using Gemini Vision."""
+        if display_name:
+            self.logger.save_profile(user_id, display_name)
+
+        if not hasattr(self, 'model'):
+            return "【系統錯誤】尚未設定 GOOGLE_API_KEY，無法辨識圖片。"
+
+        try:
+            image = Image.open(io.BytesIO(image_data))
+            
+            prompt = """
+            請分析這張圖片。
+            1. 如果圖片中包含「訂單編號」或「Order ID」，請提取出來。
+            2. 告訴我你找到了什麼編號。
+            """
+            
+            # For vision, we use the separate vision model to avoid tool calling interference
+            response = self.vision_model.generate_content([prompt, image])
+            text = response.text.strip()
+            print(f"Gemini Vision Result: {text}")
+            
+            # Log the image interaction
+            self.logger.log(user_id, "User", "[傳送了一張圖片]")
+            self.logger.log(user_id, "Bot (Vision)", text)
+            
+            # If we found a number, we can suggest the user to check it
+            match = re.search(r'(\d{5,})', text)
+            if match:
+                found_id = match.group(1)
+                # Store this ID in context for the next turn
+                self.user_context[user_id] = {"pending_order_id": found_id}
+                return f"我從圖片中看到了訂單編號 {found_id}。請問您是要查詢這筆訂單嗎？"
+            else:
+                return text
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"Vision Error: {e}")
+            return "【客服回覆】\n圖片處理發生錯誤，請稍後再試。"
+
+    def get_user_session(self, user_id):
+        """Retrieves or creates a chat session for the given user."""
+        if user_id not in self.user_sessions:
+            print(f"Creating new chat session for user: {user_id}")
+            self.user_sessions[user_id] = self.model.start_chat(enable_automatic_function_calling=True)
+        return self.user_sessions[user_id]
+
+    def generate_response(self, user_question, user_id="default_user", display_name=None):
+        # 設定當前用戶 ID，供工具函數使用
+        self.current_user_id = user_id
+        
+        # Save profile if provided
+        if display_name:
+            self.logger.save_profile(user_id, display_name)
+
+        # Log User Input
+        self.logger.log(user_id, "User", user_question)
+
+        # Check for pending context (e.g. Order ID from previous image)
+        context = self.user_context.get(user_id, {})
+        pending_id = context.get("pending_order_id")
+        
+        # Inject Current Date to help Gemini understand "Today", "Tomorrow"
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        weekday_map = {0: '一', 1: '二', 2: '三', 3: '四', 4: '五', 5: '六', 6: '日'}
+        weekday_str = weekday_map[datetime.now().weekday()]
+        system_time_context = f"\n(System Info: Current Date is {today_str} 星期{weekday_str})"
+        
+        # Append context to user question (invisible to user in chat, but visible to LLM)
+        user_question_with_context = user_question + system_time_context
+        
+        if pending_id:
+            # Inject context into the prompt so the AI knows what "Yes" refers to
+            print(f"Injecting pending Order ID: {pending_id}")
+            user_question_with_context += f"\n(System Note: The user previously uploaded an image containing Order ID {pending_id}. If the user is confirming or saying 'yes', please use this ID to call check_order_status.)"
+            # Clear the context after using it to avoid stuck state
+            self.user_context[user_id] = {}
+        
+        # Inject current order_id if exists (for context tracking across topic changes)
+        current_order_id = context.get("current_order_id")
+        if current_order_id:
+            print(f"📌 Current active Order ID: {current_order_id}")
+            user_question_with_context += f"\n(System Note: The current active Order ID is {current_order_id}. If the user provides arrival time, special requests, or any guest information, use this Order ID when calling update_guest_info.)"
+
+        if not hasattr(self, 'model'):
+            return "【系統錯誤】尚未設定 GOOGLE_API_KEY，無法使用 AI 回覆。"
+
+        try:
+            # Get user-specific session
+            chat_session = self.get_user_session(user_id)
+            
+            # Send message to Gemini
+            print(f"🤖 Sending to Gemini (Tools Enabled: True)...") # Assuming tools are always enabled for chat sessions
+            response = chat_session.send_message(user_question_with_context)
+            print("🤖 Gemini Response Received.")
+
+            # Check if order was queried - if yes, save it as current_order_id
+            if hasattr(response, 'parts'):
+                for part in response.parts:
+                    if hasattr(part, 'function_call') and part.function_call:
+                        if part.function_call.name == 'check_order_status':
+                            # Extract order_id from function call
+                            order_id_arg = part.function_call.args.get('order_id', '')
+                            if order_id_arg:
+                                # Check if this is a NEW order (different from current)
+                                old_order_id = self.user_context.get(user_id, {}).get('current_order_id')
+                                if old_order_id and old_order_id != order_id_arg:
+                                    print(f"🔄 Order Switch Detected: {old_order_id} → {order_id_arg}")
+                                    # Clear any pending collection state for the old order
+                                    # This prevents mixing data between different orders
+                                
+                                print(f"🔖 Saving current_order_id: {order_id_arg}")
+                                if user_id not in self.user_context:
+                                    self.user_context[user_id] = {}
+                                self.user_context[user_id]['current_order_id'] = order_id_arg
+                                # Mark when this order was queried (for staleness detection)
+                                self.user_context[user_id]['order_query_time'] = datetime.now()
+            
+            reply_text = response.text
+            
+            # Log Bot Response
+            self.logger.log(user_id, "Bot", reply_text)
+            
+            return reply_text
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"Gemini API Error: {e}")
+            # If session fails (e.g. history too long or other error), reset it for this user
+            print(f"Resetting session for user: {user_id}")
+            self.user_sessions[user_id] = self.model.start_chat(enable_automatic_function_calling=True)
+            return "【客服回覆】\n不好意思，剛才連線有點問題，請您再說一次好嗎？"
+
+def main():
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    kb_path = os.path.join(base_dir, "knowledge_base.json")
+    persona_path = os.path.join(base_dir, "persona.md")
+
+    bot = HotelBot(kb_path, persona_path)
+
+    print("\n--- 模擬 LINE@ 對話視窗 (輸入 'exit' 離開) ---")
+    print("Agent: 您好！我是您的專屬客服，請問有什麼我可以幫您的嗎？")
+    
+    # Simulate a user ID for local testing
+    user_id = "local_test_user"
+
+    while True:
+        user_input = input("\nUser: ")
+        if user_input.lower() in ['exit', 'quit', '離開']:
+            print("Agent: 謝謝您的來訊，期待再次為您服務！")
+            break
+        
+        response = bot.generate_response(user_input, user_id)
+        print(f"Agent: {response}")
+
+if __name__ == "__main__":
+    main()

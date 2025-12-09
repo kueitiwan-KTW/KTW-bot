@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title data-i18n="title">入住客人管理</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', 'Microsoft JhengHei', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        /* 導航列 */
+        .nav-bar {
+            background: white;
+            padding: 15px 30px;
+            border-radius: 15px;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+            display: flex;
+            gap: 15px;
+        }
+
+        .nav-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s;
+            text-decoration: none;
+            color: #666;
+            background: #f5f5f5;
+        }
+
+        .nav-btn.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .nav-btn:hover:not(.active) {
+            background: #e0e0e0;
+        }
+
+        .header {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            margin-bottom: 30px;
+        }
+
+        .header-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .header h1 {
+            color: #333;
+            font-size: 32px;
+        }
+
+        .current-date {
+            color: #666;
+            margin-top: 5px;
+            font-size: 16px;
+        }
+
+        /* 語言切換器 */
+        .lang-switcher {
+            display: flex;
+            gap: 10px;
+            background: #f5f5f5;
+            padding: 5px;
+            border-radius: 25px;
+        }
+
+        .lang-btn {
+            padding: 8px 20px;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s;
+            color: #666;
+        }
+
+        .lang-btn.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .lang-btn:hover:not(.active) {
+            background: #e0e0e0;
+        }
+
+        /* 日期選擇器 */
+        .date-selector {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+            overflow-x: auto;
+            padding: 10px 0;
+        }
+
+        .date-selector::-webkit-scrollbar {
+            height: 6px;
+        }
+
+        .date-selector::-webkit-scrollbar-thumb {
+            background: #667eea;
+            border-radius: 3px;
+        }
+
+        .date-btn {
+            min-width: 120px;
+            padding: 12px 20px;
+            border: 2px solid #e0e0e0;
+            background: white;
+            cursor: pointer;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s;
+            color: #666;
+            text-align: center;
+        }
+
+        .date-btn:hover {
+            border-color: #667eea;
+            transform: translateY(-2px);
+        }
+
+        .date-btn.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-color: transparent;
+        }
+
+        .date-label {
+            display: block;
+            font-size: 12px;
+            opacity: 0.8;
+            margin-bottom: 4px;
+        }
+
+        .date-value {
+            font-size: 16px;
+            font-weight: bold;
+        }
+
+        .stats {
+            display: flex;
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            flex: 1;
+        }
+
+        .stat-card h3 {
+            font-size: 14px;
+            opacity: 0.9;
+            margin-bottom: 5px;
+        }
+
+        .stat-card .number {
+            font-size: 36px;
+            font-weight: bold;
+        }
+
+        .guests-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 20px;
+        }
+
+        .guest-card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .guest-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        }
+
+        .guest-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .guest-name {
+            font-size: 22px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .order-badge {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .info-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 12px 0;
+            color: #666;
+        }
+
+        .info-row .icon {
+            width: 20px;
+            text-align: center;
+        }
+
+        .info-row .label {
+            font-weight: 500;
+            min-width: 80px;
+        }
+
+        .info-row .value {
+            color: #333;
+            flex: 1;
+        }
+
+        .special-requests {
+            margin-top: 15px;
+            padding: 15px;
+            background: #f8f9ff;
+            border-radius: 10px;
+            border-left: 4px solid #667eea;
+        }
+
+        .special-requests h4 {
+            font-size: 14px;
+            color: #667eea;
+            margin-bottom: 8px;
+        }
+
+        .special-requests ul {
+            list-style: none;
+            font-size: 14px;
+            color: #666;
+        }
+
+        .special-requests li {
+            margin: 5px 0;
+        }
+
+        .empty-state {
+            text-align: center;
+            background: white;
+            padding: 60px 30px;
+            border-radius: 15px;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);
+        }
+
+        .empty-state .emoji {
+            font-size: 64px;
+            margin-bottom: 20px;
+        }
+
+        .empty-state h2 {
+            color: #666;
+            margin-bottom: 10px;
+        }
+
+        .empty-state p {
+            color: #999;
+        }
+
+        .admin-notes {
+            margin-top: 15px;
+            padding: 15px;
+            background: #fff9e6;
+            border-radius: 10px;
+            border-left: 4px solid #ffa500;
+        }
+
+        .admin-notes h4 {
+            font-size: 14px;
+            color: #ffa500;
+            margin-bottom: 8px;
+        }
+
+        .admin-notes textarea {
+            width: 100%;
+            min-height: 60px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            resize: vertical;
+            font-family: inherit;
+            font-size: 14px;
+        }
+
+        .admin-notes textarea:focus {
+            outline: none;
+            border-color: #ffa500;
+        }
+
+        .admin-notes button {
+            margin-top: 10px;
+            padding: 8px 16px;
+            background: linear-gradient(135deg, #ffa500 0%, #ff7b00 100%);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: transform 0.2s;
+        }
+
+        .admin-notes button:hover {
+            transform: translateY(-2px);
+        }
+
+        .save-status {
+            display: inline-block;
+            margin-left: 10px;
+            font-size: 12px;
+            color: #28a745;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: white;
+            font-size: 18px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <!-- 導航列 -->
+        <div class="nav-bar">
+            <a href="/" class="nav-btn active">📊 入住管理</a>
+            <a href="/rich-menu" class="nav-btn">🎨 Rich Menu 管理</a>
+        </div>
+
+
+        <div class="header">
+            <div class="header-top">
+                <div>
+                    <h1 data-i18n="title">🏨 入住客人管理</h1>
+                    <p class="current-date" id="currentDate"></p>
+                </div>
+                <div class="lang-switcher">
+                    <button class="lang-btn active" data-lang="zh-TW" onclick="switchLanguage('zh-TW')">繁體中文</button>
+                    <button class="lang-btn" data-lang="id-ID" onclick="switchLanguage('id-ID')">Bahasa
+                        Indonesia</button>
+                </div>
+            </div>
+
+            <!-- 日期選擇器 -->
+            <div class="date-selector" id="dateSelector"></div>
+
+            <div class="stats">
+                <div class="stat-card">
+                    <h3 data-i18n="stat_orders">入住訂單</h3>
+                    <div class="number" id="orderCount">{{ count }}</div>
+                </div>
+            </div>
+        </div>
+
+        <div id="guestsContainer">
+            <div class="guests-grid" id="guestsGrid"></div>
+        </div>
+    </div>
+
+    <script>
+        // 翻譯字典
+        const translations = {
+            'zh-TW': {
+                title: '🏨 入住客人管理',
+                stat_orders: '入住訂單',
+                empty_title: '今日暫無入住客人',
+                empty_desc: '當客人透過 LINE Bot 確認訂單後，資訊會自動顯示在這裡',
+                label_line_name: 'LINE 姓名',
+                label_guest_name: '訂單姓名',
+                label_phone: '聯絡電話',
+                label_room_type: '房型',
+                label_checkin: '入住日期',
+                label_breakfast: '早餐',
+                label_source: '訂房來源',
+                label_arrival: '預計抵達',
+                label_special: '特殊需求',
+                label_notes: '操作人員備註',
+                btn_save: '儲存備註',
+                status_saving: '儲存中...',
+                status_saved: '✓ 已儲存',
+                status_error: '✗ 儲存失敗',
+                breakfast_yes: '含早餐',
+                breakfast_no: '不含早餐',
+                not_provided: '未提供',
+                not_specified: '未指定',
+                yesterday: '昨天',
+                today: '今天',
+                tomorrow: '明天',
+                placeholder_notes: '輸入內部備註、注意事項等...'
+            },
+            'id-ID': {
+                title: '🏨 Manajemen Tamu Check-in',
+                stat_orders: 'Pesanan Check-in',
+                empty_title: 'Belum Ada Tamu Check-in Hari Ini',
+                empty_desc: 'Informasi akan muncul di sini setelah tamu mengkonfirmasi pesanan melalui LINE Bot',
+                label_line_name: 'Nama LINE',
+                label_guest_name: 'Nama Pemesanan',
+                label_phone: 'Nomor Telepon',
+                label_room_type: 'Tipe Kamar',
+                label_checkin: 'Tanggal Check-in',
+                label_breakfast: 'Sarapan',
+                label_source: 'Sumber Pemesanan',
+                label_arrival: 'Waktu Kedatangan',
+                label_special: 'Permintaan Khusus',
+                label_notes: 'Catatan Staf',
+                btn_save: 'Simpan Catatan',
+                status_saving: 'Menyimpan...',
+                status_saved: '✓ Tersimpan',
+                status_error: '✗ Gagal Menyimpan',
+                breakfast_yes: 'Termasuk Sarapan',
+                breakfast_no: 'Tidak Termasuk Sarapan',
+                not_provided: 'Tidak Disediakan',
+                not_specified: 'Tidak Ditentukan',
+                yesterday: 'Kemarin',
+                today: 'Hari Ini',
+                tomorrow: 'Besok',
+                placeholder_notes: 'Masukkan catatan internal, hal yang perlu diperhatikan, dll...'
+            }
+        };
+
+        let currentLang = localStorage.getItem('preferred-lang') || 'zh-TW';
+        let currentDate = '{{ today }}';
+        const initialCheckins = {{ checkins | tojson }};
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', function () {
+            generateDateButtons();
+            switchLanguage(currentLang, false);
+            updateCurrentDateDisplay();
+            // 載入初始資料
+            if (initialCheckins && initialCheckins.length > 0) {
+                renderGuestCards(initialCheckins);
+            } else {
+                showEmptyState();
+            }
+        });
+
+        // 生成日期按鈕（昨天+今天+明天+未來6天）
+        function generateDateButtons() {
+            const container = document.getElementById('dateSelector');
+            const today = new Date('{{ today }}');
+
+            for (let i = -1; i < 8; i++) {
+                const date = new Date(today);
+                date.setDate(date.getDate() + i);
+
+                const dateStr = date.toISOString().split('T')[0];
+                const isActive = dateStr === currentDate;
+
+                const btn = document.createElement('button');
+                btn.className = 'date-btn' + (isActive ? ' active' : '');
+                btn.setAttribute('data-date', dateStr);
+                btn.onclick = () => loadCheckinsByDate(dateStr);
+
+                const label = document.createElement('span');
+                label.className = 'date-label';
+                label.textContent = i === -1 ? translations[currentLang].yesterday :
+                    (i === 0 ? translations[currentLang].today :
+                        (i === 1 ? translations[currentLang].tomorrow : getWeekday(date)));
+
+                const value = document.createElement('span');
+                value.className = 'date-value';
+                value.textContent = formatDate(date);
+
+                btn.appendChild(label);
+                btn.appendChild(value);
+                container.appendChild(btn);
+            }
+        }
+
+        // 載入指定日期的入住資料
+        async function loadCheckinsByDate(date) {
+            currentDate = date;
+
+            // 更新按鈕狀態
+            document.querySelectorAll('.date-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.getAttribute('data-date') === date);
+            });
+
+            // 顯示載入中
+            const container = document.getElementById('guestsContainer');
+            container.innerHTML = '<div class="loading">⏳ ' + (currentLang === 'zh-TW' ? '載入中...' : 'Memuat...') + '</div>';
+
+            try {
+                const response = await fetch(`/api/checkins/${date}`);
+                const data = await response.json();
+
+                // 更新統計
+                document.getElementById('orderCount').textContent = data.length;
+
+                // 更新客人列表
+                renderGuestCards(data);
+                updateCurrentDateDisplay();
+            } catch (error) {
+                console.error('Error loading checkins:', error);
+                container.innerHTML = '<div class="empty-state"><h2>' +
+                    (currentLang === 'zh-TW' ? '載入失敗' : 'Gagal Memuat') +
+                    '</h2></div>';
+            }
+        }
+
+        // 渲染客人卡片
+        function renderGuestCards(guests) {
+            const container = document.getElementById('guestsContainer');
+
+            if (guests.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="emoji">🎉</div>
+                        <h2 data-i18n="empty_title">${translations[currentLang].empty_title}</h2>
+                        <p data-i18n="empty_desc">${translations[currentLang].empty_desc}</p>
+                    </div>
+                `;
+                return;
+            }
+
+            const grid = document.createElement('div');
+            grid.className = 'guests-grid';
+            grid.id = 'guestsGrid';
+
+            guests.forEach(guest => {
+                const card = createGuestCard(guest);
+                grid.appendChild(card);
+            });
+
+            container.innerHTML = '';
+            container.appendChild(grid);
+        }
+
+        // 顯示空狀態
+        function showEmptyState() {
+            const container = document.getElementById('guestsContainer');
+            const t = translations[currentLang];
+            container.innerHTML = `
+                <div class="empty-state">
+                    <div class="emoji">🎉</div>
+                    <h2 data-i18n="empty_title">${t.empty_title}</h2>
+                    <p data-i18n="empty_desc">${t.empty_desc}</p>
+                </div>
+            `;
+        }
+
+        // 創建客人卡片
+        function createGuestCard(guest) {
+            const card = document.createElement('div');
+            card.className = 'guest-card';
+
+            const t = translations[currentLang];
+
+            card.innerHTML = `
+                <div class="guest-header">
+                    <div class="guest-name">${guest.guest_name || t.not_provided}</div>
+                    <div class="order-badge">#${guest.order_id}</div>
+                </div>
+                
+                <div class="info-row">
+                    <span class="icon">📅</span>
+                    <span class="label" data-i18n="label_checkin">${t.label_checkin}</span>
+                    <span class="value">${guest.check_in} - ${guest.check_out}</span>
+                </div>
+                
+                <div class="info-row">
+                    <span class="icon">🏠</span>
+                    <span class="label" data-i18n="label_room_type">${t.label_room_type}</span>
+                    <span class="value">${guest.room_type || t.not_specified} × ${guest.room_count || 1}</span>
+                </div>
+                
+                <div class="info-row">
+                    <span class="icon">📱</span>
+                    <span class="label" data-i18n="label_phone">${t.label_phone}</span>
+                    <span class="value">${guest.phone || t.not_provided}</span>
+                </div>
+                
+                <div class="info-row">
+                    <span class="icon">🍳</span>
+                    <span class="label" data-i18n="label_breakfast">${t.label_breakfast}</span>
+                    <span class="value">${guest.breakfast ? t.breakfast_yes : t.breakfast_no}</span>
+                </div>
+                
+                <div class="info-row">
+                    <span class="icon">🌐</span>
+                    <span class="label" data-i18n="label_source">${t.label_source}</span>
+                    <span class="value">${guest.booking_source || t.not_provided}</span>
+                </div>
+                
+                ${guest.line_display_name ? `
+                <div class="info-row">
+                    <span class="icon">👤</span>
+                    <span class="label" data-i18n="label_line_name">${t.label_line_name}</span>
+                    <span class="value">${guest.line_display_name}</span>
+                </div>
+                ` : ''}
+                
+                ${guest.arrival_time ? `
+                <div class="info-row">
+                    <span class="icon">🕐</span>
+                    <span class="label" data-i18n="label_arrival">${t.label_arrival}</span>
+                    <span class="value">${guest.arrival_time}</span>
+                </div>
+                ` : ''}
+                
+                ${guest.special_requests && guest.special_requests.length > 0 ? `
+                <div class="special-requests">
+                    <h4 data-i18n="label_special">🔔 ${t.label_special}</h4>
+                    <ul>
+                        ${guest.special_requests.map(req => `<li>• ${req}</li>`).join('')}
+                    </ul>
+                </div>
+                ` : ''}
+                
+                <div class="admin-notes">
+                    <h4 data-i18n="label_notes">📝 ${t.label_notes}</h4>
+                    <textarea id="notes-${guest.order_id}" 
+                        placeholder="${t.placeholder_notes}">${guest.admin_notes || ''}</textarea>
+                    <button onclick="saveNotes('${guest.order_id}')" data-i18n="btn_save">${t.btn_save}</button>
+                    <span id="status-${guest.order_id}" class="save-status"></span>
+                </div>
+            `;
+
+            return card;
+        }
+
+        // 切換語言
+        function switchLanguage(lang, reload = true) {
+            currentLang = lang;
+            localStorage.setItem('preferred-lang', lang);
+
+            // 更新按鈕狀態
+            document.querySelectorAll('.lang-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.getAttribute('data-lang') === lang);
+            });
+
+            // 更新所有翻譯文字
+            document.querySelectorAll('[data-i18n]').forEach(el => {
+                const key = el.getAttribute('data-i18n');
+                if (translations[lang][key]) {
+                    if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+                        el.placeholder = translations[lang][key];
+                    } else {
+                        el.textContent = translations[lang][key];
+                    }
+                }
+            });
+
+            // 重新載入資料以更新卡片內容
+            if (reload && document.getElementById('guestsGrid')) {
+                loadCheckinsByDate(currentDate);
+            }
+
+            // 更新日期按鈕標籤
+            updateDateButtonLabels();
+        }
+
+        // 更新日期按鈕標籤
+        function updateDateButtonLabels() {
+            const buttons = document.querySelectorAll('.date-btn');
+            buttons.forEach((btn, index) => {
+                const label = btn.querySelector('.date-label');
+                if (index === 0) {
+                    label.textContent = translations[currentLang].yesterday;
+                } else if (index === 1) {
+                    label.textContent = translations[currentLang].today;
+                } else if (index === 2) {
+                    label.textContent = translations[currentLang].tomorrow;
+                } else {
+                    const dateStr = btn.getAttribute('data-date');
+                    const date = new Date(dateStr);
+                    label.textContent = getWeekday(date);
+                }
+            });
+        }
+
+        // 更新當前日期顯示
+        function updateCurrentDateDisplay() {
+            const dateEl = document.getElementById('currentDate');
+            dateEl.textContent = currentDate;
+        }
+
+        // 儲存備註
+        function saveNotes(orderId) {
+            const textarea = document.getElementById('notes-' + orderId);
+            const statusSpan = document.getElementById('status-' + orderId);
+            const notes = textarea.value;
+            const t = translations[currentLang];
+
+            statusSpan.textContent = t.status_saving;
+            statusSpan.style.color = '#999';
+
+            fetch('/api/order/' + orderId + '/notes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ notes: notes })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        statusSpan.textContent = t.status_saved;
+                        statusSpan.style.color = '#28a745';
+                        setTimeout(() => { statusSpan.textContent = ''; }, 3000);
+                    } else {
+                        statusSpan.textContent = t.status_error;
+                        statusSpan.style.color = '#dc3545';
+                    }
+                })
+                .catch(error => {
+                    statusSpan.textContent = t.status_error;
+                    statusSpan.style.color = '#dc3545';
+                    console.error('Error:', error);
+                });
+        }
+
+        // 輔助函數
+        function formatDate(date) {
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${month}/${day}`;
+        }
+
+        function getWeekday(date) {
+            const weekdays = currentLang === 'zh-TW'
+                ? ['週日', '週一', '週二', '週三', '週四', '週五', '週六']
+                : ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
+            return weekdays[date.getDay()];
+        }
+    </script>
+
+    <!-- 留言板組件 -->
+    {% include 'message_board_component.html' %}
+
+</body>
+
+</html>

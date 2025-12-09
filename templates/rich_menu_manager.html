@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rich Menu 管理 - 龜地灣旅棧</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', 'Microsoft JhengHei', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        /* 導航列 */
+        .nav-bar {
+            background: white;
+            padding: 15px 30px;
+            border-radius: 15px;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+            display: flex;
+            gap: 15px;
+        }
+
+        .nav-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s;
+            text-decoration: none;
+            color: #666;
+            background: #f5f5f5;
+        }
+
+        .nav-btn.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .nav-btn:hover:not(.active) {
+            background: #e0e0e0;
+        }
+
+        /* 主要內容區 */
+        .header {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            color: #333;
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .content-section {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        .section-title {
+            font-size: 20px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        /* 步驟指示 */
+        .steps {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 30px;
+        }
+
+        .step {
+            flex: 1;
+            text-align: center;
+            padding: 15px;
+            background: #f8f9ff;
+            border-radius: 10px;
+            margin: 0 5px;
+        }
+
+        .step.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .step-number {
+            font-size: 24px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .step-text {
+            font-size: 14px;
+        }
+
+        /* 上傳區域 */
+        .upload-zone {
+            border: 2px dashed #667eea;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            background: #f8f9ff;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .upload-zone:hover {
+            background: #f0f2ff;
+            border-color: #764ba2;
+        }
+
+        .upload-zone.dragover {
+            background: #e8eaff;
+            border-color: #5568d3;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        /* 預覽區域 */
+        .preview-container {
+            width: 100%;
+            max-width: 600px;
+            margin: 20px auto;
+            position: relative;
+        }
+
+        .preview-image {
+            width: 100%;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        /* 按鈕 */
+        .btn {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 500;
+            transition: all 0.3s;
+            margin: 5px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #f5f5f5;
+            color: #666;
+        }
+
+        .btn-secondary:hover {
+            background: #e0e0e0;
+        }
+
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #c82333;
+        }
+
+        /* 狀態訊息 */
+        .status-message {
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            display: none;
+        }
+
+        .status-message.success {
+            background: #d4edda;
+            color: #155724;
+            border-left: 4px solid #28a745;
+        }
+
+        .status-message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border-left: 4px solid #dc3545;
+        }
+
+        .status-message.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border-left: 4px solid #17a2b8;
+        }
+
+        /* 快速設定模板 */
+        .template-section {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .template-card {
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            padding: 20px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .template-card:hover {
+            border-color: #667eea;
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.2);
+        }
+
+        .template-card h3 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .template-card p {
+            color: #666;
+            font-size: 14px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <!-- 導航列 -->
+        <div class="nav-bar">
+            <a href="/" class="nav-btn">📊 入住管理</a>
+            <a href="/rich-menu" class="nav-btn active">🎨 Rich Menu 管理</a>
+        </div>
+
+        <!-- 標題 -->
+        <div class="header">
+            <h1>🎨 Rich Menu 視覺化管理</h1>
+            <p>設定 LINE Bot 聊天室底部的選單，讓客人快速使用功能</p>
+        </div>
+
+        <!-- 狀態訊息 -->
+        <div id="statusMessage" class="status-message"></div>
+
+        <!-- 步驟指示 -->
+        <div class="steps">
+            <div class="step active" id="step1">
+                <div class="step-number">1</div>
+                <div class="step-text">選擇模板</div>
+            </div>
+            <div class="step" id="step2">
+                <div class="step-number">2</div>
+                <div class="step-text">上傳圖片（可選）</div>
+            </div>
+            <div class="step" id="step3">
+                <div class="step-number">3</div>
+                <div class="step-text">發布</div>
+            </div>
+        </div>
+
+        <!-- 快速模板選擇 -->
+        <div class="content-section">
+            <h2 class="section-title">⚡ 選擇設計方式</h2>
+            <div class="template-section">
+                <div class="template-card" onclick="useCanvaTemplate()">
+                    <h3>🎨 使用 Canva 團隊模板（推薦）</h3>
+                    <p>開啟預設好的 2500x1686 模板，套用品牌色即可完成</p>
+                    <small style="color: #999;">需要 Canva 商業版</small>
+                </div>
+                <div class="template-card" onclick="useTemplate('default')">
+                    <h3>🏨 標準旅館模板</h3>
+                    <p>查詢訂單、訂房、旅遊資訊、交通停車、天氣查詢、訂房教學</p>
+                </div>
+                <div class="template-card" onclick="useTemplate('simple')">
+                    <h3>📋 簡易模板</h3>
+                    <p>查詢訂單、我要訂房、常見問題、訂房教學</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Canva 整合區 -->
+        <div class="content-section" style="display:none;" id="canvaSection">
+            <h2 class="section-title">🎨 Canva 設計整合</h2>
+
+            <!-- 使用 Canva 模板 -->
+            <div style="background: #f8f9ff; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
+                <h3 style="margin-bottom: 15px;">📐 步驟 1：在 Canva 設計</h3>
+                <p style="color: #666; margin-bottom: 10px;">
+                    <strong>⚠️ 請先確認已登入 Canva 帳號</strong>
+                </p>
+                <p style="color: #666; margin-bottom: 15px;">
+                    點擊下方按鈕將開啟 Canva 自訂尺寸設計（2500x1686）。如遇人機驗證或登入頁面，請完成驗證後即可開始設計。
+                </p>
+                <a href="https://www.canva.com/design?create&type=custom&width=2500&height=1686&unit=px" target="_blank"
+                    class="btn btn-primary" style="margin-right: 10px;">
+                    🎨 開啟 Canva 自訂畫布（2500x1686）
+                </a>
+                <button class="btn btn-secondary" onclick="showTeamTemplateGuide()">
+                    📋 如何使用團隊模板？
+                </button>
+            </div>
+
+            <!-- Canva 連結匯入 -->
+            <div style="background: #fff9e6; padding: 20px; border-radius: 10px; border-left: 4px solid #ffa500;">
+                <h3 style="margin-bottom: 15px;">🔗 步驟 2：匯入設計</h3>
+                <p style="color: #666; margin-bottom: 15px;">
+                    在 Canva 完成設計後，選擇以下任一方式匯入：
+                </p>
+
+                <!-- 方式選擇 -->
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; margin-bottom: 10px;">
+                        <input type="radio" name="importMethod" value="url" onchange="toggleImportMethod('url')"
+                            checked>
+                        <strong>從 Canva 分享連結匯入（推薦）</strong>
+                    </label>
+                    <label style="display: block;">
+                        <input type="radio" name="importMethod" value="file" onchange="toggleImportMethod('file')">
+                        <strong>上傳下載的圖片檔案</strong>
+                    </label>
+                </div>
+
+                <!-- Canva URL 輸入 -->
+                <div id="urlImportSection">
+                    <input type="text" id="canvaUrl" placeholder="貼上 Canva 分享連結（例如：https://canva.com/design/...）"
+                        style="width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 5px; margin-bottom: 10px;">
+                    <button class="btn btn-primary" onclick="importFromCanvaUrl()">
+                        ⏬ 自動匯入
+                    </button>
+                    <p style="font-size: 12px; color: #999; margin-top: 10px;">
+                        💡 提示：在 Canva 點擊「分享」→「複製連結」
+                    </p>
+                </div>
+
+                <!-- 檔案上傳 -->
+                <div id="fileImportSection" style="display: none;">
+                    <p style="color: #666; margin-bottom: 10px;">從 Canva 下載圖片後上傳：</p>
+                    <button class="btn btn-secondary" onclick="document.getElementById('fileInput').click()">
+                        📁 選擇檔案
+                    </button>
+                </div>
+            </div>
+
+            <!-- 進度提示 -->
+            <div id="importProgress"
+                style="display:none; background: #d1ecf1; padding: 15px; border-radius: 8px; margin-top: 15px;">
+                <p style="margin: 0; color: #0c5460;">⏳ 正在處理...</p>
+            </div>
+        </div>
+
+        <!-- 圖片上傳區（原有功能保留） -->
+        <div class="content-section" style="display:none;" id="uploadSection">
+            <h2 class="section-title">📷 上傳背景圖片（選填）</h2>
+            <p style="color: #666; margin-bottom: 15px;">建議尺寸：2500 x 1686 px，檔案大小 &lt; 1MB</p>
+
+            <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+                <p style="font-size: 48px; margin-bottom: 10px;">📁</p>
+                <p style="font-size: 16px; color: #666;">點擊或拖曳圖片到這裡</p>
+                <p style="font-size: 14px; color: #999; margin-top: 5px;">支援 PNG、JPG 格式</p>
+            </div>
+            <input type="file" id="fileInput" accept="image/png,image/jpeg" onchange="handleFileSelect(event)">
+
+            <div class="preview-container" id="previewContainer" style="display:none;">
+                <img id="previewImage" class="preview-image" alt="預覽圖">
+            </div>
+        </div>
+
+        <!-- 操作按鈕 -->
+        <div class="content-section">
+            <h2 class="section-title">🚀 發布 Rich Menu</h2>
+            <div style="text-align: center;">
+                <button class="btn btn-primary" onclick="createRichMenu()">✨ 立即發布</button>
+                <button class="btn btn-secondary" onclick="skipImageUpload()">跳過圖片上傳（使用純色背景）</button>
+                <button class="btn btn-danger" onclick="deleteRichMenu()">🗑️ 刪除 Rich Menu</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let selectedTemplate = null;
+        let uploadedImagePath = null;
+
+        // 模板配置
+        const templates = {
+            'default': {
+                name: '標準旅館模板',
+                areas: [
+                    { x: 0, y: 0, width: 833, height: 843, action_type: 'message', action_value: '查詢訂單' },
+                    { x: 834, y: 0, width: 833, height: 843, action_type: 'uri', action_value: 'https://tlathena.ec-hotel.net/webhotel-v4/0818/index?_rand=9hj1mhp3h7w' },
+                    { x: 1667, y: 0, width: 833, height: 843, action_type: 'message', action_value: '旅遊資訊' },
+                    { x: 0, y: 843, width: 833, height: 843, action_type: 'message', action_value: '交通停車' },
+                    { x: 834, y: 843, width: 833, height: 843, action_type: 'message', action_value: '今天天氣' },
+                    { x: 1667, y: 843, width: 833, height: 843, action_type: 'message', action_value: '訂房教學' }
+                ]
+            },
+            'simple': {
+                name: '簡易模板',
+                areas: [
+                    { x: 0, y: 0, width: 1250, height: 843, action_type: 'message', action_value: '查詢訂單' },
+                    { x: 1250, y: 0, width: 1250, height: 843, action_type: 'uri', action_value: 'https://tlathena.ec-hotel.net/webhotel-v4/0818/index?_rand=9hj1mhp3h7w' },
+                    { x: 0, y: 843, width: 1250, height: 843, action_type: 'message', action_value: '常見問題' },
+                    { x: 1250, y: 843, width: 1250, height: 843, action_type: 'message', action_value: '訂房教學' }
+                ]
+            }
+        };
+
+        // 使用 Canva 團隊模板
+        function useCanvaTemplate() {
+            // 開啟 Canva 頁面（新分頁）
+            window.open('https://www.canva.com/design?create&type=custom&width=2500&height=1686&unit=px', '_blank');
+
+            // 顯示 Canva 整合區
+            document.getElementById('canvaSection').style.display = 'block';
+            showStatus('info', '🎨 已開啟 Canva，請在設計完成後返回此頁面匯入');
+            updateStepStatus(2);
+        }
+
+        // 顯示團隊模板使用指引
+        function showTeamTemplateGuide() {
+            const guide = `📋 使用 Canva 團隊模板完整步驟：\n\n` +
+                `✅ 前置準備：\n` +
+                `   • 確認已登入 Canva 商業版帳號\n` +
+                `   • 如遇人機驗證，請完成後再繼續\n\n` +
+                `📐 建立團隊模板（首次設定）：\n` +
+                `1️⃣ 點擊「開啟 Canva 自訂畫布」按鈕\n` +
+                `2️⃣ 完成登入/驗證後，會開啟 2500x1686 的空白畫布\n` +
+                `3️⃣ 設計您的 Rich Menu 樣式（背景、按鈕區域等）\n` +
+                `4️⃣ 完成後點擊右上角「...」→「另存為模板」\n` +
+                `5️⃣ 儲存至您的團隊資料夾供日後重複使用\n\n` +
+                `🔄 使用現有模板：\n` +
+                `1️⃣ 前往 Canva 首頁 → 「團隊」區域\n` +
+                `2️⃣ 找到已儲存的 Rich Menu 模板\n` +
+                `3️⃣ 點擊開啟並編輯內容\n` +
+                `4️⃣ 完成後下載 PNG 或分享連結\n` +
+                `5️⃣ 返回此頁面匯入設計\n\n` +
+                `💡 提示：建議將常用的 Rich Menu 設計儲存為模板，\n` +
+                `   之後只需修改文字或圖片即可快速完成新版本！`;
+
+            alert(guide);
+
+            // 同時開啟 Canva 首頁讓使用者可以前往設定
+            window.open('https://www.canva.com/', '_blank');
+        }
+
+        // 使用標準模板
+        function useTemplate(templateId) {
+            selectedTemplate = templates[templateId];
+            showStatus('success', `已選擇：${selectedTemplate.name}`);
+            document.getElementById('uploadSection').style.display = 'block';
+            updateStepStatus(2);
+        }
+
+        // 切換匯入方式
+        function toggleImportMethod(method) {
+            if (method === 'url') {
+                document.getElementById('urlImportSection').style.display = 'block';
+                document.getElementById('fileImportSection').style.display = 'none';
+            } else {
+                document.getElementById('urlImportSection').style.display = 'none';
+                document.getElementById('fileImportSection').style.display = 'block';
+            }
+        }
+
+        // 從 Canva URL 匯入
+        function importFromCanvaUrl() {
+            const canvaUrl = document.getElementById('canvaUrl').value.trim();
+
+            if (!canvaUrl) {
+                showStatus('error', '請貼上 Canva 分享連結');
+                return;
+            }
+
+            // 驗證 URL 格式
+            if (!canvaUrl.includes('canva.com')) {
+                showStatus('error', '請輸入有效的 Canva 連結');
+                return;
+            }
+
+            // 顯示進度
+            document.getElementById('importProgress').style.display = 'block';
+            document.getElementById('importProgress').innerHTML = '<p style="margin: 0; color: #0c5460;">⏳ 正在從 Canva 載入設計...</p>';
+
+            // 調用後端 API
+            fetch('/api/rich-menu/import-from-canva', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ canva_url: canvaUrl })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('importProgress').style.display = 'none';
+
+                    if (data.status === 'success') {
+                        uploadedImagePath = data.image_path;
+
+                        // 顯示預覽
+                        if (data.image_data) {
+                            document.getElementById('previewImage').src = 'data:image/png;base64,' + data.image_data;
+                            document.getElementById('previewContainer').style.display = 'block';
+                        }
+
+                        showStatus('success', '✅ Canva 設計已成功匯入！');
+
+                        // 自動選擇預設模板（如果尚未選擇）
+                        if (!selectedTemplate) {
+                            selectedTemplate = templates['default'];
+                        }
+
+                        updateStepStatus(3);
+                    } else {
+                        showStatus('error', '匯入失敗：' + (data.error || data.message));
+                    }
+                })
+                .catch(error => {
+                    document.getElementById('importProgress').style.display = 'none';
+                    showStatus('error', '匯入錯誤：' + error);
+                });
+        }
+
+        function skipImageUpload() {
+            if (!selectedTemplate) {
+                showStatus('error', '請先選擇模板');
+                return;
+            }
+            uploadedImagePath = null;
+            updateStepStatus(3);
+            showStatus('info', '將使用純色背景建立 Rich Menu');
+        }
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            // 顯示預覽
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                document.getElementById('previewImage').src = e.target.result;
+                document.getElementById('previewContainer').style.display = 'block';
+            };
+            reader.readAsDataURL(file);
+
+            // 上傳檔案
+            const formData = new FormData();
+            formData.append('image', file);
+
+            fetch('/api/rich-menu/upload', {
+                method: 'POST',
+                body: formData
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        uploadedImagePath = data.path;
+
+                        // 自動選擇預設模板（如果尚未選擇）
+                        if (!selectedTemplate) {
+                            selectedTemplate = templates['default'];
+                        }
+
+                        showStatus('success', '圖片上傳成功！');
+                        updateStepStatus(3);
+                    } else {
+                        showStatus('error', '上傳失敗：' + data.error);
+                    }
+                })
+                .catch(error => {
+                    showStatus('error', '上傳錯誤：' + error);
+                });
+        }
+
+        function createRichMenu() {
+            if (!selectedTemplate) {
+                showStatus('error', '請先選擇模板');
+                return;
+            }
+
+            const confirmMsg = '確定要發布 Rich Menu？\n' +
+                '所有使用您 LINE Bot 的客人都會看到新的選單。';
+
+            if (!confirm(confirmMsg)) return;
+
+            showStatus('info', '正在建立 Rich Menu...');
+
+            fetch('/api/rich-menu/create', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    areas: selectedTemplate.areas,
+                    image_path: uploadedImagePath
+                })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        showStatus('success', '✅ Rich Menu 發布成功！請打開 LINE 查看效果。');
+                    } else {
+                        showStatus('error', '發布失敗：' + (data.error || data.message));
+                    }
+                })
+                .catch(error => {
+                    showStatus('error', '發布錯誤：' + error);
+                });
+        }
+
+        function deleteRichMenu() {
+            if (!confirm('確定要刪除 Rich Menu？')) return;
+
+            fetch('/api/rich-menu/current')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.rich_menu_id) {
+                        return fetch('/api/rich-menu/delete', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ rich_menu_id: data.rich_menu_id })
+                        });
+                    } else {
+                        throw new Error('找不到 Rich Menu');
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        showStatus('success', 'Rich Menu 已刪除');
+                        setTimeout(() => location.reload(), 2000);
+                    } else {
+                        showStatus('error', '刪除失敗：' + (data.error || data.message));
+                    }
+                })
+                .catch(error => {
+                    showStatus('error', '刪除錯誤：' + error);
+                });
+        }
+
+        function updateStepStatus(step) {
+            for (let i = 1; i <= 3; i++) {
+                document.getElementById('step' + i).classList.remove('active');
+            }
+            document.getElementById('step' + step).classList.add('active');
+        }
+
+        function showStatus(type, message) {
+            const statusEl = document.getElementById('statusMessage');
+            statusEl.className = 'status-message ' + type;
+            statusEl.textContent = message;
+            statusEl.style.display = 'block';
+
+            if (type === 'success' || type === 'info') {
+                setTimeout(() => {
+                    statusEl.style.display = 'none';
+                }, 5000);
+            }
+        }
+
+        // 拖拉上傳
+        const uploadZone = document.getElementById('uploadZone');
+        uploadZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadZone.classList.add('dragover');
+        });
+        uploadZone.addEventListener('dragleave', () => {
+            uploadZone.classList.remove('dragover');
+        });
+        uploadZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadZone.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                document.getElementById('fileInput').files = files;
+                handleFileSelect({ target: { files: files } });
+            }
+        });
+    </script>
+
+    <!-- 留言板組件 -->
+    {% include 'message_board_component.html' %}
+
+</body>
+
+</html>
