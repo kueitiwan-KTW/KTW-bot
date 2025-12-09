@@ -179,6 +179,8 @@ Your Knowledge Base (FAQ):
            * 床型要求 ("我要兩張床") → save it!
            * 樓層要求 ("高樓層") → save it!
            * 設施需求 ("需要嬰兒床") → save it!
+           * 提前入住 ("提前入住可以嗎", "能提早入住嗎") → call update_guest_info(order_id, 'special_need', '提前入住需求')
+           * 延遲退房 ("可以延遲退房嗎") → save it!
            * 任何特殊要求 → save it!
          - If user says "沒有" or "好" (just acknowledgment): Do not save
          - **Note**: Special requests are stored in an array, so multiple requests can be accumulated.
@@ -680,6 +682,77 @@ Your Knowledge Base (FAQ):
             print(f"Vision Error: {e}")
             return "【客服回覆】\n圖片處理發生錯誤，請稍後再試。"
 
+    def _get_recent_conversation_summary(self, user_id, max_turns=20):
+        """
+        讀取用戶最近的對話記錄並生成摘要
+        
+        Args:
+            user_id: 用戶 ID
+            max_turns: 讀取最近幾輪對話（預設 20 輪）
+        
+        Returns:
+            str: 對話摘要，None 表示無歷史記錄
+        """
+        try:
+            # 讀取日誌
+            logs = self.logger.get_logs(user_id)
+            
+            if logs == "尚無對話紀錄 (No logs found).":
+                return None
+            
+            # 解析日誌格式: [時間] 【發送者】\n訊息\n-----
+            import re
+            pattern = r'\[([^\]]+)\] 【([^】]+)】\n(.*?)(?=\n-{5,}|\Z)'
+            matches = re.findall(pattern, logs, re.DOTALL)
+            
+            if not matches:
+                return None
+            
+            # 只取最近的對話（max_turns 輪 = max_turns*2 則訊息，因為每輪包含用戶+Bot）
+            recent_messages = matches[-(max_turns * 2):]
+            
+            # 提取關鍵資訊
+            conversation_lines = []
+            found_order_ids = []  # 改為列表，記錄所有訂單號（客人可能訂過多次）
+            
+            for timestamp, sender, message in recent_messages:
+                # 清理訊息內容
+                clean_message = message.strip()
+                
+                # 限制每則訊息長度（避免 token 過多）
+                if len(clean_message) > 200:
+                    clean_message = clean_message[:200] + "..."
+                
+                # 提取訂單號（可能有多筆）
+                order_matches = re.findall(r'\b(16\d{8}|25\d{8})\b', clean_message)
+                for order_id in order_matches:
+                    if order_id not in found_order_ids:  # 避免重複
+                        found_order_ids.append(order_id)
+                
+                # 記錄對話
+                conversation_lines.append(f"[{sender}]: {clean_message}")
+            
+            # 生成摘要
+            summary = "Recent conversation history (last {} turns):\n".format(len(conversation_lines) // 2)
+            summary += "\n".join(conversation_lines[-40:])  # 最多顯示最近 40 則訊息
+            
+            # 如果找到訂單號，特別標註（可能有多筆）
+            if found_order_ids:
+                if len(found_order_ids) == 1:
+                    summary += f"\n\n**Important Context**: User's current order ID is {found_order_ids[0]}"
+                else:
+                    summary += f"\n\n**Important Context**: User has multiple orders: {', '.join(found_order_ids)} (most recent: {found_order_ids[-1]})"
+            
+            print(f"📖 Loaded {len(recent_messages)} messages from chat history for user {user_id}")
+            if found_order_ids:
+                print(f"📌 Found {len(found_order_ids)} order ID(s) in history: {', '.join(found_order_ids)}")
+            
+            return summary
+            
+        except Exception as e:
+            print(f"⚠️ Error reading conversation history: {e}")
+            return None
+
     def get_user_session(self, user_id):
         """Retrieves or creates a chat session for the given user."""
         if user_id not in self.user_sessions:
@@ -715,8 +788,9 @@ Your Knowledge Base (FAQ):
             # Inject context into the prompt so the AI knows what "Yes" refers to
             print(f"Injecting pending Order ID: {pending_id}")
             user_question_with_context += f"\n(System Note: The user previously uploaded an image containing Order ID {pending_id}. If the user is confirming or saying 'yes', please use this ID to call check_order_status.)"
-            # Clear the context after using it to avoid stuck state
-            self.user_context[user_id] = {}
+            # Clear only the pending_id to avoid stuck state, but keep current_order_id
+            if user_id in self.user_context and 'pending_order_id' in self.user_context[user_id]:
+                del self.user_context[user_id]['pending_order_id']
         
         # Inject current order_id if exists (for context tracking across topic changes)
         current_order_id = context.get("current_order_id")
@@ -730,6 +804,12 @@ Your Knowledge Base (FAQ):
         try:
             # Get user-specific session
             chat_session = self.get_user_session(user_id)
+            
+            # **NEW**: 讀取歷史對話記錄（即使重啟也能恢復記憶）
+            # 如果是新建立的 session（剛重啟或新用戶），嘗試載入歷史
+            conversation_summary = self._get_recent_conversation_summary(user_id)
+            if conversation_summary:
+                user_question_with_context += f"\n\n(System Context - {conversation_summary})"
             
             # Send message to Gemini
             print(f"🤖 Sending to Gemini (Tools Enabled: True)...") # Assuming tools are always enabled for chat sessions
