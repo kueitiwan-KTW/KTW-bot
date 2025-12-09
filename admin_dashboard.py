@@ -77,6 +77,74 @@ def update_notes(order_id):
 
 
 # ========================================
+# 服務狀態監控
+# ========================================
+
+@app.route('/api/system/status')
+def get_system_status():
+    """API：取得系統服務狀態"""
+    import subprocess
+    import requests
+    import os
+    
+    status = {
+        "bot_server": {"status": "unknown", "port": 5001},
+        "admin_dashboard": {"status": "running", "port": 5002},
+        "ngrok": {"status": "unknown", "url": None},
+        "gmail": {"status": "unknown"},
+        "gemini_ai": {"status": "unknown"}
+    }
+    
+    # 檢查 Bot Server (Port 5001)
+    try:
+        result = subprocess.run(['lsof', '-ti:5001'], capture_output=True, text=True, timeout=2)
+        if result.stdout.strip():
+            status["bot_server"]["status"] = "running"
+            status["bot_server"]["pid"] = result.stdout.strip().split('\n')[0]
+        else:
+            status["bot_server"]["status"] = "stopped"
+    except:
+        status["bot_server"]["status"] = "error"
+    
+    # 檢查 ngrok (Port 4040 API)
+    try:
+        response = requests.get('http://localhost:4040/api/tunnels', timeout=2)
+        if response.status_code == 200:
+            data = response.json()
+            tunnels = data.get('tunnels', [])
+            if tunnels:
+                status["ngrok"]["status"] = "running"
+                status["ngrok"]["url"] = tunnels[0].get('public_url', '')
+            else:
+                status["ngrok"]["status"] = "no_tunnels"
+        else:
+            status["ngrok"]["status"] = "stopped"
+    except:
+        status["ngrok"]["status"] = "stopped"
+    
+    # 檢查 Gmail API（檢查憑證文件是否存在）
+    try:
+        if os.path.exists('token.json') and os.path.exists('credentials.json'):
+            status["gmail"]["status"] = "configured"
+        else:
+            status["gmail"]["status"] = "not_configured"
+    except:
+        status["gmail"]["status"] = "error"
+    
+    # 檢查 Gemini AI（檢查 API Key 是否設定）
+    try:
+        google_api_key = os.getenv('GOOGLE_API_KEY')
+        if google_api_key and len(google_api_key) > 20:
+            status["gemini_ai"]["status"] = "configured"
+        else:
+            status["gemini_ai"]["status"] = "not_configured"
+    except:
+        status["gemini_ai"]["status"] = "error"
+    
+    return jsonify(status)
+
+
+# ========================================
 # Rich Menu 管理功能
 # ========================================
 

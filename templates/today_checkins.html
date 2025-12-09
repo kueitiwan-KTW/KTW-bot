@@ -57,6 +57,72 @@
             background: #e0e0e0;
         }
 
+        /* 服務狀態監控 */
+        .status-monitor {
+            background: white;
+            padding: 15px 20px;
+            border-radius: 15px;
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            font-size: 13px;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        .status-dot.running {
+            background: #28a745;
+            box-shadow: 0 0 8px #28a745;
+        }
+
+        .status-dot.stopped {
+            background: #dc3545;
+            box-shadow: 0 0 8px #dc3545;
+        }
+
+        .status-dot.warning {
+            background: #ffc107;
+            box-shadow: 0 0 8px #ffc107;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        .status-label {
+            font-weight: 500;
+            color: #333;
+        }
+
+        .status-info {
+            color: #666;
+            font-size: 11px;
+        }
+
         .header {
             background: white;
             padding: 30px;
@@ -370,6 +436,43 @@
 
 <body>
     <div class="container">
+        <!-- 服務狀態監控 -->
+        <div class="status-monitor">
+            <div style="font-weight: 500; color: #333; margin-right: 10px;">🚦 系統狀態</div>
+
+            <div class="status-item" id="status-bot">
+                <div class="status-dot" id="dot-bot"></div>
+                <span class="status-label">Bot Server</span>
+                <span class="status-info" id="info-bot">檢查中...</span>
+            </div>
+
+            <div class="status-item" id="status-admin">
+                <div class="status-dot running" id="dot-admin"></div>
+                <span class="status-label">管理後台</span>
+                <span class="status-info">運行中</span>
+            </div>
+
+            <div class="status-item" id="status-ngrok">
+                <div class="status-dot" id="dot-ngrok"></div>
+                <span class="status-label">ngrok</span>
+                <span class="status-info" id="info-ngrok">檢查中...</span>
+            </div>
+
+            <div class="status-item" id="status-gmail">
+                <div class="status-dot" id="dot-gmail"></div>
+                <span class="status-label">Gmail API</span>
+                <span class="status-info" id="info-gmail">檢查中...</span>
+            </div>
+
+            <div class="status-item" id="status-ai">
+                <div class="status-dot" id="dot-ai"></div>
+                <span class="status-label">Gemini AI</span>
+                <span class="status-info" id="info-ai">檢查中...</span>
+            </div>
+
+            <div style="margin-left: auto; font-size: 11px; color: #999;" id="last-update"></div>
+        </div>
+
         <!-- 導航列 -->
         <div class="nav-bar">
             <a href="/" class="nav-btn active">📊 入住管理</a>
@@ -771,6 +874,82 @@
                 : ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
             return weekdays[date.getDay()];
         }
+
+        // 服務狀態監控
+        async function updateSystemStatus() {
+            try {
+                const response = await fetch('/api/system/status');
+                const data = await response.json();
+
+                // 更新 Bot Server 狀態
+                const dotBot = document.getElementById('dot-bot');
+                const infoBot = document.getElementById('info-bot');
+                if (data.bot_server.status === 'running') {
+                    dotBot.className = 'status-dot running';
+                    infoBot.textContent = `運行中 (Port ${data.bot_server.port})`;
+                } else if (data.bot_server.status === 'stopped') {
+                    dotBot.className = 'status-dot stopped';
+                    infoBot.textContent = '已停止';
+                } else {
+                    dotBot.className = 'status-dot warning';
+                    infoBot.textContent = '狀態未知';
+                }
+
+                // 更新 ngrok 狀態
+                const dotNgrok = document.getElementById('dot-ngrok');
+                const infoNgrok = document.getElementById('info-ngrok');
+                if (data.ngrok.status === 'running') {
+                    dotNgrok.className = 'status-dot running';
+                    const shortUrl = data.ngrok.url ? data.ngrok.url.replace('https://', '').substring(0, 30) + '...' : '';
+                    infoNgrok.textContent = `運行中`;
+                    infoNgrok.title = data.ngrok.url || '';
+                } else if (data.ngrok.status === 'stopped') {
+                    dotNgrok.className = 'status-dot stopped';
+                    infoNgrok.textContent = '已停止';
+                } else {
+                    dotNgrok.className = 'status-dot warning';
+                    infoNgrok.textContent = data.ngrok.status === 'no_tunnels' ? '無隧道' : '狀態未知';
+                }
+
+                // 更新 Gmail API 狀態
+                const dotGmail = document.getElementById('dot-gmail');
+                const infoGmail = document.getElementById('info-gmail');
+                if (data.gmail.status === 'configured') {
+                    dotGmail.className = 'status-dot running';
+                    infoGmail.textContent = '已配置';
+                } else if (data.gmail.status === 'not_configured') {
+                    dotGmail.className = 'status-dot stopped';
+                    infoGmail.textContent = '未配置';
+                } else {
+                    dotGmail.className = 'status-dot warning';
+                    infoGmail.textContent = '錯誤';
+                }
+
+                // 更新 Gemini AI 狀態
+                const dotAi = document.getElementById('dot-ai');
+                const infoAi = document.getElementById('info-ai');
+                if (data.gemini_ai.status === 'configured') {
+                    dotAi.className = 'status-dot running';
+                    infoAi.textContent = '已配置';
+                } else if (data.gemini_ai.status === 'not_configured') {
+                    dotAi.className = 'status-dot stopped';
+                    infoAi.textContent = '未配置';
+                } else {
+                    dotAi.className = 'status-dot warning';
+                    infoAi.textContent = '錯誤';
+                }
+
+                // 更新時間
+                const now = new Date();
+                document.getElementById('last-update').textContent = `更新於 ${now.toLocaleTimeString('zh-TW')}`;
+            } catch (error) {
+                console.error('Error updating system status:', error);
+            }
+        }
+
+        // 初始化狀態監控
+        updateSystemStatus();
+        setInterval(updateSystemStatus, 3000); // 每 3 秒更新一次
     </script>
 
     <!-- 留言板組件 -->
