@@ -38,7 +38,7 @@ app.get('/api/health', (req, res) => {
 app.get('/', (req, res) => {
     res.json({
         message: 'PMS REST API',
-        version: '1.0.0',
+        version: '1.6',
         apiVersion: 'v1',
         endpoints: {
             health: 'GET /api/health',
