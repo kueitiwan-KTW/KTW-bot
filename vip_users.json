@@ -1,0 +1,7 @@
+{
+    "vip_users": [
+        "U91e0d1519e984ba3bed5ede519c5de5f"
+    ],
+    "description": "LINE User IDs for VIP users (no restrictions). VIP用戶可以不受限制地提問任何問題。",
+    "usage": "將LINE User ID加入vip_users陣列中，格式如: U1234567890abcdef1234567890abcdef"
+}

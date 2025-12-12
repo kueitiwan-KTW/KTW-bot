@@ -20,6 +20,14 @@ class HotelBot:
         self.knowledge_base = self._load_json(knowledge_base_path)
         self.persona = self._load_text(persona_path)
         
+        # Load VIP whitelist and VIP persona
+        base_dir = os.path.dirname(persona_path)
+        vip_whitelist_path = os.path.join(base_dir, 'vip_users.json')
+        vip_persona_path = os.path.join(base_dir, 'persona_vip.md')
+        
+        self.vip_users = self._load_vip_users(vip_whitelist_path)
+        self.vip_persona = self._load_text(vip_persona_path)
+        
         # Initialize Google Services
         self.google_services = GoogleServices()
         self.gmail_helper = GmailHelper(self.google_services)
@@ -290,7 +298,8 @@ Your Knowledge Base (FAQ):
             # Configure safety settings to avoid over-blocking normal hotel conversations
             from google.generativeai.types import HarmCategory, HarmBlockThreshold
             
-            safety_settings = {
+            # Save as instance variables for reuse in get_user_session
+            self.safety_settings = {
                 HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
                 HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
                 HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
@@ -298,7 +307,7 @@ Your Knowledge Base (FAQ):
             }
             
             # Generation config for more deterministic function calling
-            generation_config = {
+            self.generation_config = {
                 'temperature': 0.2,  # Lower temperature for more consistent function calling
                 'top_p': 0.8,
                 'top_k': 20,
@@ -309,21 +318,21 @@ Your Knowledge Base (FAQ):
                 model_name='gemini-2.5-flash',
                 tools=self.tools,
                 system_instruction=self.system_instruction,
-                safety_settings=safety_settings,
-                generation_config=generation_config
+                safety_settings=self.safety_settings,
+                generation_config=self.generation_config
             )
             print("✅ HotelBot initialized.")
             
             # Vision model for OCR tasks (keep 2.0, already excellent)
             self.vision_model = genai.GenerativeModel(
                 'gemini-2.0-flash',
-                safety_settings=safety_settings
+                safety_settings=self.safety_settings
             )
             
             # Privacy validator - upgraded to 2.5 for better date parsing
             self.validator_model = genai.GenerativeModel(
                 'gemini-2.5-flash',
-                safety_settings=safety_settings
+                safety_settings=self.safety_settings
             )
             
         print("系統啟動：旅館專業客服機器人 (AI Vision + Function Calling + Multi-User + Logging + Weather版) 已就緒。")
@@ -343,6 +352,21 @@ Your Knowledge Base (FAQ):
         except Exception as e:
             print(f"Error loading persona: {e}")
             return ""
+
+    def _load_vip_users(self, path):
+        """載入VIP用戶白名單"""
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                vip_list = data.get('vip_users', [])
+                print(f"✅ Loaded {len(vip_list)} VIP user(s)")
+                return set(vip_list)  # 使用set加速查詢
+        except FileNotFoundError:
+            print("⚠️  vip_users.json not found, VIP mode disabled")
+            return set()
+        except Exception as e:
+            print(f"❌ Error loading VIP users: {e}")
+            return set()
 
     # --- Tools for Gemini ---
     def check_order_status(self, order_id: str, user_confirmed: bool = False):
@@ -929,10 +953,25 @@ STEP 2: ONLY AFTER showing all above details, then add weather and contact.
             image = Image.open(io.BytesIO(image_data))
             
             prompt = """
-            請分析這張圖片。
-            1. 如果圖片中包含「訂單編號」或「Order ID」，請提取出來。
-            2. 告訴我你找到了什麼編號。
-            """
+        請仔細分析這張圖片，判斷是以下哪一種類型：
+        
+        1. 如果是「住宿券」或「優惠券」(Voucher)：
+           - 特徵：通常會有「使用說明」、「有效期限」、券號（可能以 NO. 或 No. 開頭）
+           - 辨識券號（提取完整的券號，包含 NO. 前綴和所有數字）
+           - 確認是否為龜地灣旅棧的住宿券
+           - 回覆格式：VOUCHER|券號
+           
+        2. 如果是「訂單編號」、「預訂確認書」或「訂房資訊」：
+           - 特徵：包含 Order ID、Booking ID、訂單編號等字樣
+           - 提取訂單編號（通常是純數字，5位數以上）
+           - 回覆格式：ORDER|訂單編號
+           
+        3. 如果都不是以上類型：
+           - 簡短描述你看到的內容
+           - 回覆格式：OTHER|描述
+        
+        請嚴格按照上述格式回覆，使用 | 符號分隔類型和內容。
+        """
             
             # For vision, we use the separate vision model to avoid tool calling interference
             response = self.vision_model.generate_content([prompt, image])
@@ -943,15 +982,26 @@ STEP 2: ONLY AFTER showing all above details, then add weather and contact.
             self.logger.log(user_id, "User", "[傳送了一張圖片]")
             self.logger.log(user_id, "Bot (Vision)", text)
             
-            # If we found a number, we can suggest the user to check it
-            match = re.search(r'(\d{5,})', text)
-            if match:
-                found_id = match.group(1)
-                # Store this ID in context for the next turn
-                self.user_context[user_id] = {"pending_order_id": found_id}
-                return f"我從圖片中看到了訂單編號 {found_id}。請問您是要查詢這筆訂單嗎？"
+            # Parse the structured response
+            if "|" in text:
+                parts = text.split("|", 1)
+                response_type = parts[0].strip().upper()
+                content = parts[1].strip() if len(parts) > 1 else ""
+                
+                if response_type == "VOUCHER":
+                    return self._handle_voucher_image(content, user_id)
+                elif response_type == "ORDER":
+                    return self._handle_order_image(content, user_id)
+                else:
+                    return f"我看到了圖片內容：{content}\n\n不過我目前主要能辨識「住宿券」和「訂單編號」。如果您有其他問題，歡迎直接詢問我！😊"
             else:
-                return text
+                # Fallback: try to find any number as before
+                match = re.search(r'(\d{5,})', text)
+                if match:
+                    found_id = match.group(1)
+                    return self._handle_order_image(found_id, user_id)
+                else:
+                    return text
 
         except ValueError as ve:
             # Gemini API returned finish_reason != STOP (usually due to token limit or safety filter)
@@ -982,6 +1032,40 @@ STEP 2: ONLY AFTER showing all above details, then add weather and contact.
             traceback.print_exc()
             print(f"Vision Error: {e}")
             return "【客服回覆】\n圖片處理發生錯誤，請稍後再試。"
+
+    def _handle_voucher_image(self, voucher_number, user_id):
+        """處理住宿券圖片辨識結果"""
+        # Store voucher number in context for potential future use
+        if user_id not in self.user_context:
+            self.user_context[user_id] = {}
+        self.user_context[user_id]['voucher_number'] = voucher_number
+        
+        return f"""✅ 我看到您的住宿券了！券號：{voucher_number}
+
+📅 使用住宿券預訂流程：
+1. 請至官網預訂：https://ktwhotel.com/2cTrT
+2. 付款方式選擇「銀行轉帳」
+3. 在訂房需求欄位填入住宿券編號：{voucher_number}
+4. 預訂完成後，請告知我訂房編號
+5. 我會為您確認並回傳訂房確認書
+
+⚠️ 重要提醒：
+• 適用房型：四人房（不含早餐）
+• 適用日期：週日到週五（春節及連續假期不適用）
+• 入住時請務必攜帶住宿券正本
+• 核對券號，認券不認人
+• 如需加購早餐，請在收到確認書後告知我
+
+有任何問題都可以隨時詢問我！😊"""
+
+    def _handle_order_image(self, found_id, user_id):
+        """處理訂單編號圖片辨識結果"""
+        # Store this ID in context for the next turn
+        if user_id not in self.user_context:
+            self.user_context[user_id] = {}
+        self.user_context[user_id]["pending_order_id"] = found_id
+        return f"我從圖片中看到了訂單編號 {found_id}。請問您是要查詢這筆訂單嗎？"
+
 
     def _get_recent_conversation_summary(self, user_id, max_turns=20):
         """
@@ -1058,7 +1142,40 @@ STEP 2: ONLY AFTER showing all above details, then add weather and contact.
         """Retrieves or creates a chat session for the given user."""
         if user_id not in self.user_sessions:
             print(f"Creating new chat session for user: {user_id}")
-            self.user_sessions[user_id] = self.model.start_chat(enable_automatic_function_calling=True)
+            
+            # Check if VIP user and construct appropriate system instruction
+            is_vip = user_id in self.vip_users
+            if is_vip:
+                print(f"👑 VIP Mode activated for user: {user_id}")
+                # VIP用戶：使用VIP persona，無需knowledge base限制
+                kb_str = json.dumps(self.knowledge_base, ensure_ascii=False, indent=2)
+                vip_system_instruction = f"""
+You are a friendly and helpful AI assistant.
+
+Your Persona:
+{self.vip_persona}
+
+Hotel Knowledge Base (for reference when answering hotel-related questions):
+{kb_str}
+
+You still have access to hotel management tools (check_order_status, get_weather_forecast, etc.).
+Use these tools when appropriate to provide accurate information.
+"""
+                active_system_instruction = vip_system_instruction
+            else:
+                # 一般用戶：使用標準系統指令
+                active_system_instruction = self.system_instruction
+            
+            # Create model with appropriate system instruction
+            model_with_persona = genai.GenerativeModel(
+                model_name='gemini-2.5-flash',
+                tools=self.tools,
+                system_instruction=active_system_instruction,
+                safety_settings=self.safety_settings,
+                generation_config=self.generation_config
+            )
+            
+            self.user_sessions[user_id] = model_with_persona.start_chat(enable_automatic_function_calling=True)
         return self.user_sessions[user_id]
 
     def reset_conversation(self, user_id):
@@ -1124,10 +1241,14 @@ STEP 2: ONLY AFTER showing all above details, then add weather and contact.
             chat_session = self.get_user_session(user_id)
             
             # **NEW**: 讀取歷史對話記錄（即使重啟也能恢復記憶）
-            # 如果是新建立的 session（剛重啟或新用戶），嘗試載入歷史
-            conversation_summary = self._get_recent_conversation_summary(user_id)
-            if conversation_summary:
-                user_question_with_context += f"\n\n(System Context - {conversation_summary})"
+            # VIP用戶跳過歷史載入，避免舊的拒絕回答模式影響新對話
+            is_vip = user_id in self.vip_users
+            if not is_vip:
+                conversation_summary = self._get_recent_conversation_summary(user_id)
+                if conversation_summary:
+                    user_question_with_context += f"\n\n(System Context - {conversation_summary})"
+            else:
+                print(f"👑 VIP用戶跳過歷史對話載入")
             
             # Send message to Gemini
             print(f"🤖 Sending to Gemini (Tools Enabled: True)...") # Assuming tools are always enabled for chat sessions
