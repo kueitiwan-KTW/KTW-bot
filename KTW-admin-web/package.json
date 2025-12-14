@@ -9,11 +9,15 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@noction/vue-draggable-grid": "^1.11.0",
+    "@yeger/vue-masonry-wall": "^5.1.4",
     "gridstack": "^12.3.3",
+    "muuri": "^0.9.5",
     "vue": "^3.5.13"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.2.1",
+    "pm2": "^6.0.14",
     "vite": "^5.4.11"
   }
 }
