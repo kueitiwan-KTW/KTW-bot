@@ -1,6 +1,6 @@
 <template>
   <div class="guest-card" :class="'card-status-' + guest.status_code">
-    <div class="guest-card-header" @click="toggleExpand">
+    <div class="guest-card-header" @click.stop="toggleExpand">
       <div class="header-main">
         <span class="guest-card-name">
           {{ guest.registered_name || guest.guest_name }}
@@ -13,11 +13,11 @@
       </div>
       <div class="header-right">
         <span class="guest-card-status" :class="'status-' + guest.status_code">{{ guest.status_name }}</span>
-        <span class="expand-icon">{{ expanded ? '▲' : '▼' }}</span>
+        <span class="expand-icon">{{ isExpanded ? '▲' : '▼' }}</span>
       </div>
     </div>
     <!-- 收折內容 -->
-    <div v-show="expanded" class="guest-card-details">
+    <div v-if="isExpanded" class="guest-card-details">
       <div class="detail-row"><span class="label">聯絡電話</span><span class="value">{{ guest.contact_phone || '-' }}</span></div>
       <div class="detail-row"><span class="label">入住日期</span><span class="value">{{ guest.check_in_date }}{{ guest.nights >= 2 ? ` (${guest.nights}晚)` : '' }}</span></div>
       <div class="detail-row"><span class="label">退房日期</span><span class="value">{{ guest.check_out_date }}</span></div>
@@ -40,21 +40,22 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
-
 // 共用房客卡片元件 (GuestCard)
 // 用於今日、昨日、明日入住清單
-defineProps({
+const props = defineProps({
   guest: {
     type: Object,
     required: true
+  },
+  isExpanded: {
+    type: Boolean,
+    default: false
   }
 });
 
-// 收折狀態
-const expanded = ref(false);
+const emit = defineEmits(['toggle']);
 
 function toggleExpand() {
-  expanded.value = !expanded.value;
+  emit('toggle');
 }
 </script>
