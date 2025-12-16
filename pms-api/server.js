@@ -92,10 +92,19 @@ async function startServer() {
         app.listen(PORT, () => {
             console.log('');
             console.log('🚀 PMS API 伺服器已啟動');
+            console.log(`📍 API 版本: v1.8`);
             console.log(`📡 監聽端口: ${PORT}`);
             console.log(`🌐 API 位址: http://localhost:${PORT}`);
             console.log(`💚 健康檢查: http://localhost:${PORT}/api/health`);
             console.log('');
+
+            // 啟動暫存訂單自動清除排程
+            try {
+                const scheduler = require('./scheduler');
+                scheduler.startScheduler();
+            } catch (e) {
+                console.log('⚠️ 排程器載入失敗（非致命錯誤）：', e.message);
+            }
         });
     } catch (err) {
         console.error('❌ 伺服器啟動失敗：', err.message);

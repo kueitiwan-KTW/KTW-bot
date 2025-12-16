@@ -398,5 +398,160 @@ WHERE OOS_STA = 'Y'
 
 ---
 
-*最後更新：2025-12-13*
+## WRS_STOCK_DT - 網路庫存表 ⭐
+
+> **用途**：管理放到網路（OTA）上的房間庫存
+>
+> **WRS 鎖控**：PMS 系統的庫存控制機制，區分「網路庫存」與「館內庫存」
+
+### 關鍵欄位
+
+| 欄位名 | 類型 | 說明 | 備註 |
+|--------|------|------|------|
+| **HOTEL_COD** | NCHAR(12) | 飯店代碼 | 固定 '01' |
+| **ROOM_COD** | NCHAR(12) | 房型代碼 | SD, CD, WD... |
+| **BATCH_DAT** | DATE | 日期 | 查詢條件 |
+| **STOCK_QNT** | NUMBER | ⭐ **網路總庫存** | 放到 OTA 的數量 |
+| **USE_QNT** | NUMBER | 已訂數量 | OTA 已訂走的 |
+| **UPLOAD_STA** | NCHAR(3) | 上傳狀態 | Y=已同步到網路 |
+| **AUTO_STOCK_STA** | NCHAR(3) | 自動控管 | Y=自動庫存管理 |
+
+### 計算公式
+
+```
+網路可預訂數 = STOCK_QNT - USE_QNT
+```
+
+### 查詢範例
+
+```sql
+-- 查詢今日各房型網路庫存
+SELECT 
+    TRIM(ROOM_COD) as 房型,
+    STOCK_QNT as 網路庫存,
+    USE_QNT as 已訂,
+    (STOCK_QNT - USE_QNT) as 可訂
+FROM GDWUUKT.WRS_STOCK_DT 
+WHERE TRUNC(BATCH_DAT) = TRUNC(SYSDATE)
+ORDER BY ROOM_COD
+```
+
+---
+
+## RMINV_MN - 房間庫存主檔 ⭐
+
+> **用途**：記錄各房型的完整庫存狀況（館內層級）
+>
+> **特點**：包含總房數、館內剩餘、停用房、已訂等完整資訊
+
+### 關鍵欄位
+
+| 欄位名 | 類型 | 說明 | 備註 |
+|--------|------|------|------|
+| **HOTEL_COD** | NCHAR | 飯店代碼 | 固定 '01' |
+| **BATCH_DAT** | DATE | 日期 | 查詢條件 |
+| **ROOM_COD** | NCHAR | 房型代碼 | SD, CD, WD... |
+| **ROOM_QNT** | NUMBER | 房型總房數 | 實體房間數 |
+| **LEFT_QNT** | NUMBER | ⭐ **館內剩餘庫存** | 櫃檯可用數 |
+| **OOO_QNT** | NUMBER | 停用/維修房數 | Out of Order |
+| **ORDER_QNT** | NUMBER | 已預訂數 | 總預訂數 |
+| **USE_QNT** | NUMBER | 使用中 | 目前入住數 |
+| **BLOCK_QNT** | NUMBER | 控房數 | 被鎖定的房 |
+| **REST_QNT** | NUMBER | 剩餘 | - |
+
+### 查詢範例
+
+```sql
+-- 查詢今日各房型館內庫存
+SELECT 
+    TRIM(ROOM_COD) as 房型,
+    ROOM_QNT as 總房數,
+    LEFT_QNT as 館內剩餘,
+    OOO_QNT as 停用
+FROM GDWUUKT.RMINV_MN 
+WHERE TRUNC(BATCH_DAT) = TRUNC(SYSDATE)
+ORDER BY ROOM_COD
+```
+
+---
+
+## 庫存系統總結
+
+### 庫存類型對照表
+
+| 庫存類型 | 資料表 | 欄位 | 說明 |
+|----------|--------|------|------|
+| 🌐 **網路庫存** | `WRS_STOCK_DT` | `STOCK_QNT` | 放到 OTA 的總數 |
+| 🌐 **網路可訂** | `WRS_STOCK_DT` | `STOCK_QNT - USE_QNT` | 網路實際可訂 |
+| 🏨 **館內庫存** | `RMINV_MN` | `LEFT_QNT` | 櫃檯可用數量 |
+| 📊 **總房數** | `RMINV_MN` | `ROOM_QNT` | 房型實體房間 |
+| 🔧 **停用房** | `RMINV_MN` | `OOO_QNT` | 維修中房間 |
+
+### 庫存邏輯說明
+
+1. **網路庫存**：由館方主動「放上去」給 OTA 販售
+2. **館內庫存**：PMS 自動計算的剩餘可用房間
+3. **WRS 鎖控**：控制網路庫存的機制，可隨時拉回
+
+---
+
+## WRS_ROOM_PRICE - 房間價格表 ⭐
+
+> **用途**：記錄各房型按日期的價格（浮動定價）
+>
+> **特點**：週末/假日可設定不同價格
+
+### 關鍵欄位
+
+| 欄位名 | 類型 | 說明 | 備註 |
+|--------|------|------|------|
+| **CI_DAT** | DATE | 入住日期 | 查詢條件 |
+| **ROOM_COD** | NCHAR | 房型代碼 | SD, CD, WD... |
+| **PAY_TOT** | NUMBER | ⭐ **房價總額** | 含稅價格 |
+| **DAYS** | NUMBER | 天數 | 當日預訂用 DAYS=1 |
+| **PRODUCT_NOS** | NCHAR | 產品編號 | 20001901=官網優惠價 |
+
+### 查詢範例
+
+```sql
+-- 查詢今日各房型價格（官網優惠價）
+SELECT 
+    TRIM(ROOM_COD) as 房型,
+    PAY_TOT as 價格
+FROM GDWUUKT.WRS_ROOM_PRICE 
+WHERE TRUNC(CI_DAT) = TRUNC(SYSDATE)
+  AND DAYS = 1
+  AND TRIM(PRODUCT_NOS) = '20001901'
+ORDER BY ROOM_COD
+```
+
+### 價格來源優先順序
+
+1. **WRS_ROOM_PRICE** (按日期浮動價) - `PRODUCT_NOS = '20001901'`
+2. **RATECOD_DT** (固定價) - `RATE_COD = 'web001'`
+
+---
+
+## 已知問題與限制
+
+### 退房還原訂單的姓名顯示
+
+**問題描述**：
+- 經過「退房 → 還原」操作的訂單，`GALT_NAM` 欄位可能因 Oracle NCHAR 固定長度特性導致空值檢查失效
+- 即使 `LENGTH(TRIM(GALT_NAM)) > 0` 仍可能無法正確取得姓名
+
+**影響範圍**：
+- 少數經過退房還原的訂單
+- 顯示為 `CUST_NAM`（如「電話或Line訂房」）而非實際姓名
+
+**暫不處理**：
+- 此情況發生機率極低
+- 不影響正常訂單流程
+- 已記錄供未來參考
+
+**範例訂單**：00709801
+
+---
+
+*最後更新：2025-12-16*
 *資料來源：PMS Server (192.168.8.3) - GDWUUKT Schema*
