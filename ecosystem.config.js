@@ -34,10 +34,13 @@ module.exports = {
         },
         {
             name: "Line-Bot-Py",
-            script: "./run_dev.sh",
-            cwd: "./",
-            interpreter: "/bin/bash",
-            watch: false
+            script: "python3",
+            args: "app.py",
+            cwd: "./LINEBOT",
+            watch: false,
+            env: {
+                PYTHONPATH: "..:../shared"
+            }
         },
         {
             name: "Ngrok-Tunnel",

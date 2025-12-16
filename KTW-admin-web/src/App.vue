@@ -218,6 +218,41 @@ async function markAsKeyed(orderId) {
   }
 }
 
+// 取消暫存訂單（標記而非刪除）
+async function cancelBooking(orderId) {
+  if (!confirm('確定要取消此訂單嗎？')) return
+  
+  try {
+    const res = await fetch(`${API_BASE}/api/bookings/same-day/${orderId}/cancel`, {
+      method: 'PATCH',
+      signal: AbortSignal.timeout(5000)
+    })
+    if (res.ok) {
+      const result = await res.json()
+      if (result.success) {
+        alert('✅ 訂單已取消')
+        // 刷新列表
+        await fetchSameDayBookings()
+      } else {
+        alert('❌ 取消失敗：' + (result.error?.message || '未知錯誤'))
+      }
+    } else {
+      alert('❌ API 請求失敗：HTTP ' + res.status)
+    }
+  } catch (error) {
+    console.error('取消訂單失敗:', error)
+    alert('❌ 取消失敗：' + error.message)
+  }
+}
+
+// 格式化日期時間（顯示時間部分）
+function formatDateTime(isoString) {
+  if (!isoString) return '-'
+  const date = new Date(isoString)
+  return date.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })
+}
+
+
 // 手動重新整理 - 全部即時更新
 async function manualRefresh() {
   // 重設倒數計時器
@@ -725,9 +760,10 @@ const statusIcons = {
                 <table class="same-day-table">
                   <thead>
                     <tr>
-                      <th>訂單編號</th>
+                      <th>訂單時間</th>
                       <th>房型</th>
                       <th>姓名</th>
+                      <th>LINE 姓名</th>
                       <th>電話</th>
                       <th>抵達時間</th>
                       <th>狀態</th>
@@ -735,26 +771,32 @@ const statusIcons = {
                     </tr>
                   </thead>
                   <tbody>
-                    <tr v-for="booking in sameDayBookings" :key="booking.order_id" :class="{ 'checked-in': booking.status === 'checked_in' }">
-                      <td class="order-id">{{ booking.order_id }}</td>
-                      <td>{{ booking.room_type_name || booking.room_type_code }} x{{ booking.room_count }}</td>
+                    <tr v-for="booking in sameDayBookings" :key="booking.order_id" 
+                        :class="{ 'checked-in': booking.status === 'checked_in', 'cancelled': booking.status === 'cancelled' }">
+                      <td class="order-time">{{ formatDateTime(booking.created_at) }}</td>
+                      <td>{{ booking.room_type_name || booking.room_type_code }} x{{ booking.room_count }}{{ booking.bed_type ? ` (${booking.bed_type})` : '' }}</td>
                       <td class="guest-name">{{ booking.guest_name }}</td>
+                      <td class="line-name">{{ booking.line_display_name || '-' }}</td>
                       <td class="phone">{{ booking.phone }}</td>
                       <td>{{ booking.arrival_time }}</td>
                       <td>
                         <span class="status-badge" :class="booking.status">
-                          {{ booking.status === 'checked_in' ? '🟢 已 KEY' : '🟡 待入住' }}
+                          {{ booking.status === 'checked_in' ? '🟢 已 KEY' : 
+                             booking.status === 'cancelled' ? '🔴 已取消' : 
+                             booking.status === 'interrupted' ? '🔵 預約中斷' : '🟡 待入住' }}
                         </span>
                       </td>
-                      <td>
-                        <button 
-                          v-if="booking.status !== 'checked_in'" 
-                          class="key-btn" 
-                          @click="markAsKeyed(booking.order_id)"
-                        >
-                          標記已 KEY
-                        </button>
-                        <span v-else class="done-text">✓</span>
+                      <td class="action-buttons">
+                        <template v-if="booking.status === 'pending' || booking.status === 'interrupted'">
+                          <button class="key-btn" @click="markAsKeyed(booking.order_id)">
+                            標記已 KEY
+                          </button>
+                          <button class="cancel-btn" @click="cancelBooking(booking.order_id)">
+                            取消
+                          </button>
+                        </template>
+                        <span v-else-if="booking.status === 'checked_in'" class="done-text">✓ 已完成</span>
+                        <span v-else class="cancelled-text">✕ 已取消</span>
                       </td>
                     </tr>
                   </tbody>

@@ -517,6 +517,79 @@ router.patch('/same-day/:order_id/checkin', async (req, res) => {
 
 
 /**
+ * PATCH /api/bookings/same-day/:order_id/cancel
+ * 取消暫存訂單（標記為取消，保留 LOG）
+ */
+router.patch('/same-day/:order_id/cancel', async (req, res) => {
+    try {
+        const { order_id } = req.params;
+        const dataDir = path.join(__dirname, '..', 'data');
+        const filePath = path.join(dataDir, 'same_day_bookings.json');
+
+        if (!fs.existsSync(filePath)) {
+            return res.status(404).json({
+                success: false,
+                error: {
+                    code: 'NOT_FOUND',
+                    message: '找不到暫存訂單檔案'
+                }
+            });
+        }
+
+        let bookings = [];
+        try {
+            const content = fs.readFileSync(filePath, 'utf8');
+            bookings = JSON.parse(content);
+        } catch (e) {
+            return res.status(500).json({
+                success: false,
+                error: {
+                    code: 'READ_ERROR',
+                    message: '讀取暫存訂單失敗'
+                }
+            });
+        }
+
+        const orderIndex = bookings.findIndex(b => b.temp_order_id === order_id);
+        if (orderIndex === -1) {
+            return res.status(404).json({
+                success: false,
+                error: {
+                    code: 'NOT_FOUND',
+                    message: `找不到訂單編號 ${order_id}`
+                }
+            });
+        }
+
+        // 標記為取消，保留記錄
+        bookings[orderIndex].status = 'cancelled';
+        bookings[orderIndex].cancelled_at = new Date().toISOString();
+        fs.writeFileSync(filePath, JSON.stringify(bookings, null, 2), 'utf8');
+
+        console.log(`❌ 暫存訂單已取消：${order_id}`);
+
+        res.json({
+            success: true,
+            data: {
+                order_id: order_id,
+                status: 'cancelled',
+                message: '已標記為取消'
+            }
+        });
+
+    } catch (err) {
+        console.error('取消訂單失敗：', err);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'CANCEL_ERROR',
+                message: '取消訂單時發生錯誤'
+            }
+        });
+    }
+});
+
+/**
  * GET /api/bookings/:booking_id
  * 查詢單一訂單詳細資訊
  */
@@ -678,9 +751,9 @@ router.post('/same-day', async (req, res) => {
             check_out_date: checkOutDate,
             line_user_id: line_user_id || null,
             line_display_name: line_display_name || null,
-            status: 'pending',  // 待處理（需人工確認）
+            status: req.body.status || 'pending',  // 支援 pending/interrupted
             created_at: today.toISOString(),
-            notes: '⚠️ 當日預訂 - 免訂金 - 需客人準時抵達'
+            notes: req.body.status === 'interrupted' ? '💔 預約中斷' : '⚠️ 當日預訂 - 免訂金 - 需客人準時抵達'
         };
 
         // 暫存至 JSON 檔案（PMS 整合後可改為直接寫入資料庫）

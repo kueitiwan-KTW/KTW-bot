@@ -1403,8 +1403,71 @@ body {
 
 .done-text {
   color: #4caf50;
-  font-size: 1.2rem;
-  font-weight: bold;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+/* 取消按鈕 */
+.cancel-btn {
+  background: linear-gradient(135deg, #ff6b6b, #ee5a5a);
+  border: none;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 0.82rem;
+  color: white;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-weight: 500;
+  margin-left: 8px;
+}
+
+.cancel-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(255, 107, 107, 0.4);
+}
+
+.cancel-btn:active {
+  transform: translateY(0);
+}
+
+.cancelled-text {
+  color: #ef4444;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+/* 已取消的行 */
+.same-day-table tr.cancelled {
+  opacity: 0.6;
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.same-day-table tr.cancelled td {
+  text-decoration: line-through;
+  text-decoration-color: rgba(239, 68, 68, 0.5);
+}
+
+.same-day-table tr.cancelled .status-badge,
+.same-day-table tr.cancelled .action-time,
+.same-day-table tr.cancelled .cancelled-text {
+  text-decoration: none;
+}
+
+/* 操作按鈕區域 */
+.action-buttons {
+  white-space: nowrap;
+}
+
+/* 操作時間 */
+.action-time {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* LINE 姓名 */
+.line-name {
+  color: #00d4ff;
+  font-size: 0.9rem;
 }
 
 .error-text {
