@@ -837,6 +837,7 @@ body {
   gap: 15px;
   max-height: 500px;
   overflow-y: auto;
+  align-items: start;
 }
 
 .guest-card {
@@ -845,8 +846,12 @@ body {
   padding: 15px;
   transition: all 0.3s;
   min-width: 320px;
-  /* 加寬卡片 */
+  position: relative;
+  z-index: 1;
+  pointer-events: auto;
 }
+
+/* 加寬卡片 */
 
 .guest-card:hover {
   background: rgba(255, 255, 255, 0.1);
@@ -862,15 +867,15 @@ body {
   border-bottom: 1px solid rgba(255, 255, 255, 0.15);
   cursor: pointer;
   user-select: none;
+  position: relative;
+  z-index: 2;
 }
 
 .guest-card-header:hover {
   background: rgba(255, 255, 255, 0.05);
   border-radius: 8px;
-  margin: -5px;
-  padding: 5px;
-  padding-bottom: 15px;
-  margin-bottom: 7px;
+  margin: -5px -5px 7px -5px;
+  padding: 5px 5px 15px 5px;
 }
 
 .header-right {
@@ -1276,4 +1281,134 @@ body {
 .dot.inspecting {
   background: #ffd700;
   box-shadow: 0 0 4px rgba(255, 215, 0, 0.8);
+}
+
+/* ============================================
+   LINE 當日預訂區塊樣式
+   ============================================ */
+
+.same-day-panel {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 20px;
+}
+
+.same-day-panel .panel-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 15px;
+}
+
+.same-day-panel .panel-header h3 {
+  flex: 1;
+  font-size: 1.1rem;
+  color: #fff;
+}
+
+.same-day-panel .panel-count {
+  font-size: 0.9rem;
+  color: #888;
+  font-weight: normal;
+}
+
+/* 暫存訂單表格 */
+.same-day-table-wrapper {
+  overflow-x: auto;
+}
+
+.same-day-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.same-day-table th,
+.same-day-table td {
+  padding: 12px 10px;
+  text-align: left;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.same-day-table th {
+  color: #888;
+  font-weight: 500;
+  font-size: 0.85rem;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.same-day-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.same-day-table tbody tr.checked-in {
+  opacity: 0.6;
+}
+
+.same-day-table .order-id {
+  font-family: 'Consolas', monospace;
+  color: #00d4ff;
+  font-weight: 600;
+}
+
+.same-day-table .guest-name {
+  font-weight: 600;
+}
+
+.same-day-table .phone {
+  font-family: 'Consolas', monospace;
+}
+
+/* 狀態標籤 */
+.status-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 0.82rem;
+  font-weight: 500;
+}
+
+.status-badge.pending {
+  background: rgba(255, 193, 7, 0.2);
+  color: #ffc107;
+}
+
+.status-badge.checked_in {
+  background: rgba(76, 175, 80, 0.2);
+  color: #4caf50;
+}
+
+/* 標記已 KEY 按鈕 */
+.key-btn {
+  background: linear-gradient(135deg, #00d4ff, #7b2ff7);
+  border: none;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 0.82rem;
+  color: white;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  font-weight: 500;
+}
+
+.key-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 212, 255, 0.4);
+}
+
+.key-btn:active {
+  transform: translateY(0);
+}
+
+.done-text {
+  color: #4caf50;
+  font-size: 1.2rem;
+  font-weight: bold;
+}
+
+.error-text {
+  text-align: center;
+  color: #ef4444;
+  padding: 20px;
 }

@@ -1,5 +1,6 @@
+```
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, reactive } from 'vue'
 import { GridStack } from 'gridstack'
 import 'gridstack/dist/gridstack.min.css'
 import GuestCard from './components/GuestCard.vue'
@@ -17,7 +18,8 @@ const widgets = ref([
   { id: 'occupancy', title: '住房率', x: 6, y: 0, w: 3, h: 2, visible: true, collapsed: false },
   { id: 'vacant', title: '空房數', x: 9, y: 0, w: 3, h: 2, visible: true, collapsed: false },
   { id: 'rooms', title: '即時房況', x: 0, y: 2, w: 12, h: 5, visible: true, collapsed: false },
-  { id: 'guests', title: '昨今明入住資訊', x: 0, y: 7, w: 12, h: 4, visible: true, collapsed: false },
+  { id: 'sameday', title: 'LINE 當日預訂', x: 0, y: 6, w: 12, h: 4, visible: true, collapsed: false },
+  { id: 'guests', title: '昨今明入住資訊', x: 0, y: 10, w: 12, h: 4, visible: true, collapsed: false },
 ])
 
 // 切換面板收折狀態
@@ -78,6 +80,23 @@ function sortGuestsByStatus(guests) {
 // 今日入住客人清單
 const todayGuests = ref([])
 const guestsLoading = ref(true)
+
+// 展開狀態管理（使用數組儲存已展開的卡片 ID）
+const expandedCards = ref([])
+
+function toggleCardExpand(bookingId) {
+  const index = expandedCards.value.indexOf(bookingId)
+  if (index > -1) {
+    expandedCards.value = expandedCards.value.filter(id => id !== bookingId)
+  } else {
+    expandedCards.value = [...expandedCards.value, bookingId]
+  }
+}
+
+function isCardExpanded(bookingId) {
+  return expandedCards.value.includes(bookingId)
+}
+
 
 // 從 Node.js Core 取得今日入住客人
 async function fetchTodayCheckin() {
@@ -148,6 +167,57 @@ async function fetchTomorrowCheckin() {
   }
 }
 
+// ============================================
+// LINE 當日預訂（暫存訂單）
+// ============================================
+const sameDayBookings = ref([])
+const sameDayLoading = ref(false)
+const sameDayError = ref(null)
+
+// 取得當日暫存訂單
+async function fetchSameDayBookings() {
+  sameDayLoading.value = true
+  sameDayError.value = null
+  try {
+    const res = await fetch(`${API_BASE}/api/pms/same-day-bookings`, {
+      signal: AbortSignal.timeout(5000)
+    })
+    if (res.ok) {
+      const result = await res.json()
+      if (result.success) {
+        sameDayBookings.value = result.data?.bookings || []
+      } else {
+        sameDayError.value = result.error || '取得暫存訂單失敗'
+      }
+    } else {
+      sameDayError.value = `HTTP ${res.status}`
+    }
+  } catch (error) {
+    sameDayError.value = error.message
+  } finally {
+    sameDayLoading.value = false
+  }
+}
+
+// 標記暫存訂單為已 KEY
+async function markAsKeyed(orderId) {
+  try {
+    const res = await fetch(`${API_BASE}/api/pms/same-day-bookings/${orderId}/checkin`, {
+      method: 'PATCH',
+      signal: AbortSignal.timeout(5000)
+    })
+    if (res.ok) {
+      const result = await res.json()
+      if (result.success) {
+        // 刷新列表
+        await fetchSameDayBookings()
+      }
+    }
+  } catch (error) {
+    console.error('標記訂單失敗:', error)
+  }
+}
+
 // 手動重新整理 - 全部即時更新
 async function manualRefresh() {
   // 重設倒數計時器
@@ -159,6 +229,7 @@ async function manualRefresh() {
     fetchYesterdayCheckin(),
     fetchTomorrowCheckin(),
     fetchRoomStatus(),
+    fetchSameDayBookings(),
     checkServiceStatus()
   ])
 }
@@ -304,6 +375,10 @@ onMounted(() => {
   // 房間狀態 (每15秒)
   fetchRoomStatus()
   roomInterval = setInterval(fetchRoomStatus, 15000)
+  
+  // LINE 當日預訂 (每30秒)
+  fetchSameDayBookings()
+  setInterval(fetchSameDayBookings, 30000)
   
   // 啟動倒數計時器
   startCountdown()
@@ -634,8 +709,63 @@ const statusIcons = {
 
 
 
+        <!-- LINE 當日預訂 (暫存訂單) -->
+        <div v-if="widgets[5].visible" class="grid-stack-item" :class="{ collapsed: widgets[5].collapsed }" gs-id="sameday" gs-x="0" gs-y="6" gs-w="100" gs-h="4" gs-min-w="12" gs-min-h="3">
+          <div class="grid-stack-item-content same-day-panel">
+            <div class="panel-header">
+              <div class="widget-handle"></div>
+              <h3>📱 LINE 當日預訂 <span class="panel-count">({{ sameDayBookings.length }})</span></h3>
+              <button class="collapse-btn" @click="toggleCollapse(5)">{{ widgets[5].collapsed ? '▼' : '▲' }}</button>
+            </div>
+            <div v-show="!widgets[5].collapsed" class="panel-body">
+              <div v-if="sameDayLoading" class="loading-text">載入中...</div>
+              <div v-else-if="sameDayError" class="error-text">{{ sameDayError }}</div>
+              <div v-else-if="sameDayBookings.length === 0" class="empty-text">📋 目前無 LINE 當日預訂</div>
+              <div v-else class="same-day-table-wrapper">
+                <table class="same-day-table">
+                  <thead>
+                    <tr>
+                      <th>訂單編號</th>
+                      <th>房型</th>
+                      <th>姓名</th>
+                      <th>電話</th>
+                      <th>抵達時間</th>
+                      <th>狀態</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="booking in sameDayBookings" :key="booking.order_id" :class="{ 'checked-in': booking.status === 'checked_in' }">
+                      <td class="order-id">{{ booking.order_id }}</td>
+                      <td>{{ booking.room_type_name || booking.room_type_code }} x{{ booking.room_count }}</td>
+                      <td class="guest-name">{{ booking.guest_name }}</td>
+                      <td class="phone">{{ booking.phone }}</td>
+                      <td>{{ booking.arrival_time }}</td>
+                      <td>
+                        <span class="status-badge" :class="booking.status">
+                          {{ booking.status === 'checked_in' ? '🟢 已 KEY' : '🟡 待入住' }}
+                        </span>
+                      </td>
+                      <td>
+                        <button 
+                          v-if="booking.status !== 'checked_in'" 
+                          class="key-btn" 
+                          @click="markAsKeyed(booking.order_id)"
+                        >
+                          標記已 KEY
+                        </button>
+                        <span v-else class="done-text">✓</span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- 入住資訊（Tab 切換：今日/昨日/明日） -->
-        <div v-if="widgets[5].visible" class="grid-stack-item" :class="{ collapsed: widgets[5].collapsed }" gs-id="guests" gs-x="0" gs-y="6" gs-w="100" gs-h="10" gs-min-w="12" gs-min-h="4">
+        <div v-if="widgets[6].visible" class="grid-stack-item" :class="{ collapsed: widgets[6].collapsed }" gs-id="guests" gs-x="0" gs-y="10" gs-w="100" gs-h="10" gs-min-w="12" gs-min-h="4">
           <div class="grid-stack-item-content guest-cards-panel">
             <div class="panel-header">
               <div class="widget-handle"></div>
@@ -651,15 +781,21 @@ const statusIcons = {
                   明日 <span class="tab-count">({{ tomorrowGuests.length }})</span>
                 </button>
               </div>
-              <button class="collapse-btn" @click="toggleCollapse(5)">{{ widgets[5].collapsed ? '▼' : '▲' }}</button>
+              <button class="collapse-btn" @click="toggleCollapse(6)">{{ widgets[6].collapsed ? '▼' : '▲' }}</button>
             </div>
-            <div v-show="!widgets[5].collapsed" class="panel-body">
+            <div v-show="!widgets[6].collapsed" class="panel-body">
               <!-- 今日入住 -->
               <div v-show="activeGuestTab === 'today'">
                 <div v-if="guestsLoading" class="loading-text">載入中...</div>
                 <div v-else-if="todayGuests.length === 0" class="empty-text">今日無入住</div>
                 <div v-else class="guest-cards-list">
-                  <GuestCard v-for="g in todayGuests" :key="g.booking_id" :guest="g" />
+                  <GuestCard 
+                    v-for="g in todayGuests" 
+                    :key="'today-' + g.booking_id" 
+                    :guest="g" 
+                    :isExpanded="isCardExpanded('today-' + g.booking_id)"
+                    @toggle="toggleCardExpand('today-' + g.booking_id)"
+                  />
                 </div>
               </div>
               <!-- 昨日入住 -->
@@ -667,7 +803,13 @@ const statusIcons = {
                 <div v-if="yesterdayLoading" class="loading-text">載入中...</div>
                 <div v-else-if="yesterdayGuests.length === 0" class="empty-text">昨日無入住</div>
                 <div v-else class="guest-cards-list">
-                  <GuestCard v-for="g in yesterdayGuests" :key="g.booking_id" :guest="g" />
+                  <GuestCard 
+                    v-for="g in yesterdayGuests" 
+                    :key="'yesterday-' + g.booking_id" 
+                    :guest="g" 
+                    :isExpanded="isCardExpanded('yesterday-' + g.booking_id)"
+                    @toggle="toggleCardExpand('yesterday-' + g.booking_id)"
+                  />
                 </div>
               </div>
               <!-- 明日入住 -->
@@ -675,7 +817,13 @@ const statusIcons = {
                 <div v-if="tomorrowLoading" class="loading-text">載入中...</div>
                 <div v-else-if="tomorrowGuests.length === 0" class="empty-text">明日無入住</div>
                 <div v-else class="guest-cards-list">
-                  <GuestCard v-for="g in tomorrowGuests" :key="g.booking_id" :guest="g" />
+                  <GuestCard 
+                    v-for="g in tomorrowGuests" 
+                    :key="'tomorrow-' + g.booking_id" 
+                    :guest="g" 
+                    :isExpanded="isCardExpanded('tomorrow-' + g.booking_id)"
+                    @toggle="toggleCardExpand('tomorrow-' + g.booking_id)"
+                  />
                 </div>
               </div>
             </div>
