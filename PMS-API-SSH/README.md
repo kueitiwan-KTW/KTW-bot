@@ -6,6 +6,28 @@
 
 ---
 
+## 🔑 SSH 金鑰連線（免密碼）
+
+金鑰已設定完成，直接執行：
+
+```bash
+ssh Administrator@192.168.8.3
+```
+
+如需在 PMS Server 上執行指令：
+```bash
+# 範例：檢查服務狀態
+ssh Administrator@192.168.8.3 "Get-Service pms-api"
+
+# 範例：重啟 PMS API
+ssh Administrator@192.168.8.3 "Restart-Service pms-api"
+
+# 範例：執行 Node.js 腳本
+ssh Administrator@192.168.8.3 "cd C:\pms-api && node test.js"
+```
+
+---
+
 ## 📁 檔案說明
 
 | 檔案 | 功能 |
@@ -13,45 +35,28 @@
 | `Enable-SSH.ps1` | 安裝並啟用 OpenSSH Server + 設定防火牆 |
 | `Disable-SSH.ps1` | 停止 SSH 服務 + 關閉防火牆（安全用途） |
 | `Check-SSH-Status.ps1` | 檢查目前 SSH 服務狀態 |
+| `Fix-SSH-KeyAuth.ps1` | 修正金鑰認證 + 設定 Mac 公鑰 |
 
 ---
 
-## 🚀 使用方式
+## 🚀 首次設定步驟
 
 ### 步驟 1：複製到 PMS 伺服器
 
-將整個 `PMS-API-SSH` 資料夾複製到 Windows Server 上（例如桌面）。
+將整個 `PMS-API-SSH` 資料夾複製到 Windows Server 上：
+```
+C:\KTW-bot\PMS-API-SSH
+```
 
-### 步驟 2：啟用 SSH
+### 步驟 2：啟用 SSH（如未啟用）
 
 1. **右鍵點擊** `Enable-SSH.ps1`
 2. 選擇 **「以 PowerShell 執行」**
-3. 如果出現權限提示，選擇 **「是」**
 
-> ⚠️ 必須以**系統管理員**身分執行！
+### 步驟 3：設定金鑰認證
 
-### 步驟 3：確認連線資訊
-
-腳本執行完成後會顯示：
-- 伺服器 IP 位址
-- 連線 Port (22)
-- 建議的連線指令
-
----
-
-## 🔌 從 Mac 連線
-
-啟用成功後，使用以下指令連線：
-
-```bash
-ssh 使用者名稱@192.168.8.3
-```
-
-例如：
-```bash
-ssh Administrator@192.168.8.3
-ssh ktw@192.168.8.3
-```
+1. **右鍵點擊** `Fix-SSH-KeyAuth.ps1`
+2. 選擇 **「以系統管理員身分執行」**
 
 ---
 
@@ -71,15 +76,12 @@ ssh ktw@192.168.8.3
 2. 確認防火牆已開放 Port 22
 3. 確認兩台電腦在同一網段
 
-### 密碼錯誤
+### 密碼錯誤 / 金鑰不工作
 
-- 使用 Windows 登入帳號密碼
-- 帳號名稱區分大小寫
+- 重新執行 `Fix-SSH-KeyAuth.ps1`
+- 確認 SSH 服務已重啟
 
-### 首次連線出現警告
+---
 
-這是正常的，輸入 `yes` 繼續即可：
-```
-The authenticity of host '192.168.8.3' can't be established.
-Are you sure you want to continue connecting (yes/no)? yes
-```
+*最後更新：2025-12-15*
+
