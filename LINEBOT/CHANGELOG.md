@@ -4,6 +4,66 @@
 
 ---
 
+## [1.2.0] - 2025-12-17
+
+### 當日預訂 AI 邏輯重構
+
+#### 架構優化
+**檔案**: `bot.py`
+
+1. **移除舊版路由邏輯** (L1439-1456)
+   - 刪除 `_has_order_number()` 方法
+   - 刪除 `if self._has_order_number(user_question):` 路由判斷
+   - **理由**: 讓 AI 統一判斷數字是電話還是訂單編號
+
+2. **System Prompt 優化** (L100-150)
+   - 新增 "Proactive Confirmation Principle" (主動確認原則)
+   - **內容**: 當客人輸入模糊時（如單純數字、不明確時間），AI 需主動詢問確認
+   - **效果**: 避免將電話號碼誤判為訂單編號
+
+#### 功能增強
+**檔案**: `bot.py`
+
+1. **多房型支援** (L1140-1180)
+   - **函數**: `create_same_day_booking()`
+   - **修改**: 支援解析多房型字串（例: "2間標準雙人, 1間四人房"）
+   - **邏輯**:
+     ```python
+     # 解析房型字串
+     room_patterns = [
+         r'(\d+)\s*間?\s*([^,，]+)',  # "2間雙人房"
+         r'([^,，]+?)\s*[xX×]\s*(\d+)'  # "雙人房 x 2"
+     ]
+     ```
+
+2. **床型解析** (L1158-1180)
+   - **問題**: 多房型時床型資訊混亂
+   - **解決**: 從 `bed_type` 字串解析出每個房型對應的床型
+   - **實作**:
+     ```python
+     bed_type_parts = bed_type.split(',')
+     for i, room_entry in enumerate(room_entries):
+         bed_type_for_room = bed_type_parts[i].split(':')[1].strip()
+     ```
+
+### Bug 修復
+
+1. **多房型床型錯誤**
+   - **檔案**: `bot.py` (L1171)
+   - **問題**: 所有房型共用同一個 `bed_type`
+   - **修復**: 解析床型字串，為每個房型分配正確床型
+
+2. **PMS API 錯誤**
+   - **檔案**: `pms-api/routes/bookings.js` (L858, L862-865)
+   - **問題**: 使用未定義的 `tempOrderId` 變數
+   - **修復**: 改用 `itemId` 和 `orderId`
+
+### 📝 修改的文件
+- `bot.py` (L1140-1180, L1439-1456) - 多房型解析、移除舊路由
+- `pms-api/routes/bookings.js` (L858, L862-865) - 修復變數錯誤
+
+---
+
 ## [1.1.6] - 2025-12-17
 
 ### 修復問題
