@@ -412,7 +412,7 @@ Your Knowledge Base (FAQ):
             
             # Main model for conversation and function calling
             self.model = genai.GenerativeModel(
-                model_name='gemini-2.5-flash',
+                model_name='gemini-3-flash-preview',
                 tools=self.tools,
                 system_instruction=self.system_instruction,
                 safety_settings=safety_settings,
@@ -422,13 +422,13 @@ Your Knowledge Base (FAQ):
             
             # Vision model for OCR tasks (keep 2.0, already excellent)
             self.vision_model = genai.GenerativeModel(
-                'gemini-2.0-flash',
+                'gemini-3-flash-preview',
                 safety_settings=safety_settings
             )
             
             # Privacy validator - upgraded to 2.5 for better date parsing
             self.validator_model = genai.GenerativeModel(
-                'gemini-2.5-flash',
+                'gemini-3-flash-preview',
                 safety_settings=safety_settings
             )
             

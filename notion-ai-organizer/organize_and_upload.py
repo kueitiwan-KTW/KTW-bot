@@ -35,7 +35,7 @@ class NotionAIOrganizer:
     """AI 驅動的 Notion 文檔整理器"""
     
     def __init__(self):
-        self.model = genai.GenerativeModel('gemini-2.5-flash')
+        self.model = genai.GenerativeModel('gemini-3-flash-preview')
         self.current_branch = self._get_current_branch()
     
     def _get_current_branch(self):

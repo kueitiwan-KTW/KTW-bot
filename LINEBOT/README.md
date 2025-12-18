@@ -9,7 +9,7 @@
 LINE Bot 是 KTW Hotel 的智能客服系統,整合 Google Gemini AI、PMS API 和 Gmail API,提供 24/7 自動化客戶服務。
 
 ### 核心功能
-- ✅ AI 智能對話 (Gemini 2.5 Flash)
+- ✅ AI 智能對話 (Gemini 3.0 Flash)
 - ✅ 訂單查詢 (PMS + Gmail)
 - ✅ 當日預訂系統
 - ✅ 天氣預報查詢
@@ -24,7 +24,7 @@ LINE Bot 是 KTW Hotel 的智能客服系統,整合 Google Gemini AI、PMS API �
 ### 技術棧
 - **語言**: Python 3.9+
 - **框架**: Flask (LINE Webhook)
-- **AI 模型**: Google Gemini 2.5 Flash
+- **AI 模型**: Google Gemini 3.0 Flash (Preview)
 - **API 整合**: LINE Messaging API, PMS API, Gmail API, 中央氣象署 API
 
 ### 系統架構
@@ -109,7 +109,7 @@ pm2 start ecosystem.config.js --only Line-Bot-Py
 ## 📚 核心功能說明
 
 ### 1. AI 智能對話
-- **模型**: Gemini 2.5 Flash
+- **模型**: Gemini 3.0 Flash (Preview)
 - **知識庫**: `../data/knowledge_base.json`
 - **人格設定**: `persona.md`
 - **支援格式**: 文字、圖片、語音
@@ -127,7 +127,7 @@ pm2 start ecosystem.config.js --only Line-Bot-Py
 - **容錯**: Proactive Confirmation Principle (主動確認機制)
 
 ### 4. 語音訊息
-- **技術**: Gemini 2.5 Flash 多模態
+- **技術**: Gemini 3.0 Flash 多模態
 - **支援語言**: 繁體中文
 - **處理**: 自動轉文字後進入對話流程
 
@@ -206,8 +206,8 @@ pm2 restart Line-Bot-Py
 
 ## 📝 版本資訊
 
-- **當前版本**: v1.2.0
-- **最後更新**: 2025-12-17
+- **當前版本**: v1.3.0
+- **最後更新**: 2025-12-18
 - **維護者**: KTW Hotel IT Team
 
 詳細變更記錄請參閱 [CHANGELOG.md](./CHANGELOG.md)

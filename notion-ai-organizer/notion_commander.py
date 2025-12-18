@@ -39,7 +39,7 @@ class NotionCommander:
     
     def __init__(self):
         self.notion = notion
-        self.model = genai.GenerativeModel('gemini-2.5-flash')
+        self.model = genai.GenerativeModel('gemini-3-flash-preview')
         self.pending_tasks = []
     
     def get_all_pages(self, parent_id=PARENT_PAGE_ID):
