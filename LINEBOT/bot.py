@@ -12,7 +12,7 @@ import io
 
 # 從新的模組結構匯入
 from helpers import GoogleServices, GmailHelper, WeatherHelper, PMSClient
-from handlers import HandlerRouter, OrderQueryHandler, AIConversationHandler, SameDayBookingHandler
+from handlers import HandlerRouter, OrderQueryHandler, AIConversationHandler, SameDayBookingHandler, ConversationStateMachine
 from chat_logger import ChatLogger
 
 class HotelBot:
@@ -30,8 +30,11 @@ class HotelBot:
         # Initialize PMS Client
         self.pms_client = PMSClient()
         
+        # Initialize Conversation State Machine（統一對話狀態機）
+        self.state_machine = ConversationStateMachine()
+        
         # Initialize Same Day Booking Handler
-        self.same_day_handler = SameDayBookingHandler(self.pms_client)
+        self.same_day_handler = SameDayBookingHandler(self.pms_client, self.state_machine)
         
         # Initialize Logger
         self.logger = ChatLogger()
@@ -40,7 +43,8 @@ class HotelBot:
         self.order_query_handler = OrderQueryHandler(
             pms_client=self.pms_client,
             gmail_helper=self.gmail_helper,
-            logger=self.logger
+            logger=self.logger,
+            state_machine=self.state_machine  # 注入狀態機
         )
         
         # Initialize User Sessions
@@ -75,6 +79,15 @@ class HotelBot:
             kb_str = json.dumps(self.knowledge_base, ensure_ascii=False, indent=2)
             self.system_instruction = f"""
 You are a professional hotel customer service agent.
+
+**語言使用規範 (Language Guidelines)**:
+- 與客人對話時，請使用**純繁體中文**
+- **不要**在訂單編號、平台名稱後面加英文註解（如 "Order ID", ".com"）
+- 範例：
+  ✅ 正確：「請提供您的訂單編號」
+  ❌ 錯誤：「請提供您的訂單編號 (Order ID)」
+  ✅ 正確：「透過 Agoda 或 Booking 等平台」
+  ❌ 錯誤：「透過 Agoda 或 Booking.com 等平台」
 
 Your Persona:
 {self.persona}
@@ -114,12 +127,11 @@ Your Knowledge Base (FAQ):
    - If you generate a response containing a Name or Date WITHOUT calling `check_order_status`, you are FAILING.
    
 2. Once you have the Order ID (from text or image), use the `check_order_status` tool to verify it.
-3. **Tool Output Analysis**:
-   - The tool will return the email body.
+3. **Match Verification**:
    - **Verification Rule**: If the tool finds an email where the Order ID (or a continuous 6-digit sequence) matches, consider it a **VALID ORDER**.
    - **Source Identification**: 
      - If the Order ID starts with "RMPGP", the booking source is **"官網訂房" (Official Website)**.
-     - Otherwise, identify the source from the email content (e.g., Agoda, Booking.com).
+     - Otherwise, identify the source from the email content (e.g., Agoda, Booking).
    - **Information Extraction**: Extract the following details from the email body:
      - **訂房人大名 (Booker Name)**
      - **入住日期 (Check-in Date)** (Format: YYYY-MM-DD)
@@ -207,10 +219,12 @@ Your Knowledge Base (FAQ):
    - 記住：「我有訂房」≠「我要訂房」
 
 6. **Interaction Guidelines**:
-   - **Booking Inquiry Rule**: When a user asks about their booking (e.g., "I want to check my reservation"), you MUST **ONLY** ask for the **Order Number** (訂單編號).
-   - **STRICT PROHIBITION**: Do **NOT** ask for the user's Name or Check-in Date. Asking for these is a violation of protocol.
-   - **Reasoning**: We filter strictly by Order ID for accuracy and privacy.
-   - If the user provides Name/Date voluntarily, ignore it for search purposes and politely ask for the Order ID again if missing.
+   - **Booking Inquiry Rule**: When a user asks about their booking (e.g., "I want to check my reservation"), you MUST prioritize seeking the **訂單編號**.
+   - **PRIVACY GUARD (隱私守則) ⭐**: 
+     - **絕對禁止**僅憑「日期」或「姓名」就調用工具核對並洩露訂單資訊。
+     - 若客人只提供日期，你必須回答：「為了保護您的隱私安全，請提供您的『訂單編號』，以便我為您準確核對資訊唷！」
+   - **COMBINATORIAL QUERY (組合查詢)**: 為了提高準確度，你可以引導客人提供「訂單編號 + 姓名」或「訂單編號 + 電話」，並將這些資料同時傳入 `check_order_status` 工具中。
+   - **Hallucination Check**: 嚴禁在未成功調用工具的情況下，自行拼湊或猜測訂單內容。
        - 入住日期 (顯示格式：YYYY-MM-DD，並註明 **共 X 晚**)
        - 房型 (顯示核對後的標準房型名稱)       - 預訂房型/數量
        - 早餐資訊
@@ -451,407 +465,417 @@ Your Knowledge Base (FAQ):
             return ""
 
     # --- Tools for Gemini ---
-    def check_order_status(self, order_id: str, user_confirmed: bool = False):
-            """
-            Checks the status of an order.
-            
-            Args:
-                order_id: The order ID provided by the user (or the confirmed full ID).
-                user_confirmed: Set to True ONLY after the user explicitly says "Yes" to the found order ID. Default is False.
-            
-            Returns:
-                Dict with status:
-                - If confirmed=False: returns 'confirmation_needed' and the Found ID.
-                - If confirmed=True: returns full details dict containing:
-                  * status: "found"
-                  * order_id: the booking ID
-                  * subject: email subject or booking source
-                  * body: the cleaned body text
-                  * **formatted_display**: 🚨 CRITICAL - Pre-formatted order details text 🚨
-                    
-                    ⚠️ MANDATORY ACTION REQUIRED ⚠️
-                    When you receive this field, you MUST:
-                    1. Output the EXACT content of `formatted_display` VERBATIM
-                    2. Do NOT skip, summarize, or modify ANY part of it
-                    3. Do NOT proceed to weather/contact BEFORE showing all 8 fields:
-                       訂單來源, 訂單編號, 訂房人姓名, 聯絡電話, 入住日期, 退房日期, 房型, 早餐
-                    4. ONLY after displaying formatted_display, then show weather/contact
-                    
-                    ❌ FORBIDDEN: Skipping `formatted_display` and going directly to:
-                       "🌤️ 溫馨提醒..." or "系統顯示您的聯絡電話..."
-                    ✅ REQUIRED: Display `formatted_display` FIRST, then weather/contact
-            """
-            print(f"🔧 Tool Called: check_order_status(order_id={order_id}, confirmed={user_confirmed})")
-            
-            # Clean input
-            order_id = order_id.strip()
+    def check_order_status(self, order_id: str, guest_name: str = "", phone: str = "", user_confirmed: bool = False):
+        """
+        Checks the status of an order. Supports combined verification for enhanced accuracy and privacy.
+        
+        Args:
+            order_id: The order ID provided by the user. (MANDATORY for detail disclosure)
+            guest_name: (Optional) Guest name for double-checking.
+            phone: (Optional) Contact phone for double-checking.
+            user_confirmed: Set to True ONLY after the user explicitly says "Yes" to the found order ID. Default is False.
+        
+        Returns:
+            Dict containing order details or status:
+            - status: "found", "not_found", or "privacy_blocked"
+            - formatted_display: (If found) Pre-formatted order details text...
+        """
+        print(f"🔧 Tool Called: check_order_status(order_id={order_id}, guest_name={guest_name}, phone={phone}, confirmed={user_confirmed})")
+        
+        # Clean input
+        order_id = order_id.strip()
 
-            # 1. Try PMS API First (Primary Data Source)
-            order_info = None
-            data_source = None
-            
-            try:
-                print("🔷 Attempting PMS API query...")
-                pms_response = self.pms_client.get_booking_details(order_id)
-                
-                if pms_response and pms_response.get('success'):
-                    order_info = pms_response
-                    data_source = 'pms'
-                    print(f"✅ PMS API Success: {pms_response['data']['booking_id']}")
-                else:
-                    print("📭 PMS API: Booking not found")
-            except Exception as e:
-                print(f"⚠️ PMS API failed: {e}")
-            
-            # 2. Fallback to Gmail if PMS fails
-            if not order_info or data_source != 'pms':
-                print("📧 Falling back to Gmail search...")
-                gmail_info = self.gmail_helper.search_order(order_id)
-                if gmail_info:
-                    order_info = gmail_info
-                    data_source = 'gmail'
-                    print("✅ Gmail search successful")
-            
-            # 3. Check if we found anything
-            if not order_info:
-                return {"status": "not_found", "order_id": order_id}
+        # --- 隱私攔截碼 (Privacy Guard) ---
+        import re
+        # 1. 攔截日期格式 (防止 AI 誤將日期當成 ID)
+        if re.search(r'\d{1,2}/\d{1,2}', order_id) or re.search(r'\d{4}-\d{2}-\d{2}', order_id):
+            print(f"🚫 Privacy Block: AI tried to query using a date as ID: {order_id}")
+            return {"status": "privacy_blocked", "message": "請提供訂單編號而非日期。"}
+        
+        # 2. 攔截過短的編號 (單純 4 位數以下數字不予揭露)
+        clean_id_numeric = re.sub(r'\D', '', order_id)
+        if not clean_id_numeric or len(clean_id_numeric) < 5:
+             print(f"� Privacy Block: AI tried to query using vague ID: {order_id}")
+             return {"status": "privacy_blocked", "message": "訂單編號過短或格式不正確。"}
+        # -------------------------------
 
-            # 4. Extract Order ID (different logic for PMS vs Gmail)
-            if data_source == 'pms':
-                # PMS data is already clean and structured
-                pms_id = order_info['data']['booking_id']
-                ota_id = order_info['data'].get('ota_booking_id', '')
-                
-                # 优先使用客人输入的号码来确认（如果匹配 OTA 订单号）
-                if ota_id and (order_id in ota_id or ota_id in order_id):
-                    found_id = ota_id  # 使用 OTA 订单号确认
-                    found_subject = f"OTA Order: {ota_id}"
-                    print(f"📋 Using OTA Order ID for confirmation: {found_id}")
-                else:
-                    found_id = pms_id  # 使用 PMS 订单号
-                    found_subject = f"PMS Order: {pms_id}"
-                    print(f"📋 Using PMS Order ID: {pms_id}")
+        # 1. Try PMS API First (Primary Data Source)
+        order_info = None
+        data_source = None
+        
+        try:
+            print("🔷 Attempting PMS API query...")
+            # 使用增強後的組合查詢邏輯
+            pms_response = self.pms_client.get_booking_details(order_id, guest_name=guest_name, phone=phone)
+            
+            if pms_response and pms_response.get('success'):
+                order_info = pms_response
+                data_source = 'pms'
+                print(f"✅ PMS API Success: {pms_response['data']['booking_id']}")
             else:
-                # Gmail data needs extraction (original logic)
-                found_subject = order_info.get('subject', 'Unknown')
-                found_id = order_info.get('order_id', 'Unknown')
-                
-                # Always try to extract the most complete NUMERIC order ID from subject
-                import re
-                # Look for long numeric sequences (10+ digits preferred, min 6 digits)
-                patterns = [
-                    r'訂單編號[：:]?\s*(?:[A-Z]+)?(\d{6,})',  # Optional colon
-                    r'編號[：:]?\s*(?:[A-Z]+)?(\d{6,})',
-                    r'Booking\s+ID[：:]?\s*(?:[A-Z]+)?(\d{6,})',
-                    r'\b(?:RM[A-Z]{2})?(\d{10,})\b',  # Optional RMAG prefix
-                    r'\b(\d{10,})\b'  # Pure long number
-                ]
-                
-                extracted_id = None
-                for pattern in patterns:
-                    match = re.search(pattern, found_subject)
-                    if match:
-                        extracted = match.group(1)  # Get ONLY the digits
-                        # Verify this contains the user's query
-                        if order_id in extracted or extracted in order_id:
-                            extracted_id = extracted
-                            print(f"📋 Extracted numeric order ID: {extracted_id}")
-                            break
-                
-                # Use extracted numeric ID if it's longer/more complete
-                if extracted_id:
-                    # Remove any non-digit characters from extracted_id
-                    extracted_id = re.sub(r'\D', '', extracted_id)
-                    if found_id == 'Unknown' or len(extracted_id) > len(re.sub(r'\D', '', found_id)):
-                        found_id = extracted_id
-                elif found_id == 'Unknown':
-                    # Final fallback: extract digits from order_id or subject
-                    numeric_only = re.sub(r'\D', '', order_id)
-                    if numeric_only:
-                        found_id = numeric_only
-                    else:
-                        found_id = order_id
+                print("📭 PMS API: Booking not found or details mismatch")
+        except Exception as e:
+            print(f"⚠️ PMS API failed: {e}")
+        
+        # 2. Fallback to Gmail if PMS fails
+        # 注意：Gmail 備援僅在有強力的 booking_id 時觸發（長度 > 10 或包含字母）
+        if not order_info and (len(order_id) > 10 or not order_id.isdigit()):
+            print("📧 Falling back to Gmail search...")
+            gmail_info = self.gmail_helper.search_order(order_id)
+            if gmail_info:
+                order_info = gmail_info
+                data_source = 'gmail'
+                print("✅ Gmail search successful")
             
-            # 2. Confirmation Step (Safety + Correctness)
-            if not user_confirmed:
-                # Check for "Strong Match" to potentially skip manual confirmation
-                # User Request: "If number matches exactly (ignoring prefix), accept it."
-                # Logic: If order_id is long enough (>= 9 digits) and appears in found_id, auto-confirm.
-                is_strong_match = len(order_id) >= 9 and (order_id in found_subject or (found_id != 'Unknown' and order_id in found_id))
-                
-                print(f"🔍 Match Debug: ID={order_id}, Found={found_id}, Subject={found_subject}, StrongMatch={is_strong_match}")
-                
-                if is_strong_match:
-                     print(f"🤖 Auto-Confirming Strong Match: {order_id}")
-                     user_confirmed = True # Proceed directly to Step 3
-                else:
-                    # We found something, but we must verify with the user first.
-                    # We return only safe metadata, NO details.
-                    return {
-                        "status": "confirmation_needed",
-                        "found_order_id": found_id,
-                        "found_subject": found_subject,
-                        "message": f"I found an order with ID {found_id}. Please ask the user if this is correct."
-                    }
+        # 3. Check if we found anything (必須在備援檢查之後)
+        if not order_info:
+            print(f"📭 Order not found in any source: {order_id}")
+            return {"status": "not_found", "order_id": order_id}
 
-            # 3. Privacy & Detail Step (Only if Confirmed)
-            from datetime import datetime, timedelta
-            today_str = datetime.now().strftime("%Y-%m-%d")
+        # 4. Extract Order ID (different logic for PMS vs Gmail)
+        if data_source == 'pms':
+            # PMS data is already clean and structured
+            pms_id = order_info['data']['booking_id']
+            ota_id = order_info['data'].get('ota_booking_id', '')
             
-            if data_source == 'pms':
-                # PMS data: Simple privacy check based on check-in date
-                try:
-                    check_in_date = order_info['data']['check_in_date']
-                    check_in = datetime.strptime(check_in_date, '%Y-%m-%d')
-                    today = datetime.strptime(today_str, '%Y-%m-%d')
-                    days_ago = (today - check_in).days
+            # DEBUG: 輸出完整的 API 返回資料
+            print(f"🔍 DEBUG - API Response Data: {order_info['data']}")
+            print(f"🔍 DEBUG - pms_id: {pms_id}, ota_id: '{ota_id}', order_id: {order_id}")
+            
+            # 优先使用客人输入的号码来确认（如果匹配 OTA 订单号）
+            if ota_id and (order_id in ota_id or ota_id in order_id):
+                found_id = ota_id  # 使用 OTA 订单号确认
+                found_subject = f"OTA Order: {ota_id}"
+                print(f"📋 Using OTA Order ID for confirmation: {found_id}")
+            else:
+                found_id = pms_id  # 使用 PMS 订单号
+                found_subject = f"PMS Order: {pms_id}"
+                print(f"📋 Using PMS Order ID: {pms_id}")
+        else:
+            # Gmail data needs extraction (original logic)
+            found_subject = order_info.get('subject', 'Unknown')
+            found_id = order_info.get('order_id', 'Unknown')
+            
+            # Always try to extract the most complete NUMERIC order ID from subject
+            import re
+            # Look for long numeric sequences (10+ digits preferred, min 6 digits)
+            patterns = [
+                r'訂單編號[：:]?\s*(?:[A-Z]+)?(\d{6,})',  # Optional colon
+                r'編號[：:]?\s*(?:[A-Z]+)?(\d{6,})',
+                r'Booking\s+ID[：:]?\s*(?:[A-Z]+)?(\d{6,})',
+                r'\b(?:RM[A-Z]{2})?(\d{10,})\b',  # Optional RMAG prefix
+                r'\b(\d{10,})\b'  # Pure long number
+            ]
+            
+            extracted_id = None
+            for pattern in patterns:
+                match = re.search(pattern, found_subject)
+                if match:
+                    extracted = match.group(1)  # Get ONLY the digits
+                    # Verify this contains the user's query
+                    if order_id in extracted or extracted in order_id:
+                        extracted_id = extracted
+                        print(f"📋 Extracted numeric order ID: {extracted_id}")
+                        break
+            
+            # Use extracted numeric ID if it's longer/more complete
+            if extracted_id:
+                # Remove any non-digit characters from extracted_id
+                extracted_id = re.sub(r'\D', '', extracted_id)
+                if found_id == 'Unknown' or len(extracted_id) > len(re.sub(r'\D', '', found_id)):
+                    found_id = extracted_id
+            elif found_id == 'Unknown':
+                # Final fallback: extract digits from order_id or subject
+                numeric_only = re.sub(r'\D', '', order_id)
+                if numeric_only:
+                    found_id = numeric_only
+                else:
+                    found_id = order_id
+        
+        # 2. Confirmation Step (Safety + Correctness)
+        if not user_confirmed:
+            # 總是要求用戶確認訂單，確保訂單狀態最新且正確
+            # 即使是強匹配也需要確認，因為訂單可能已取消或修改
+            print(f"🔍 Found Order: ID={order_id}, Found={found_id}, Subject={found_subject}")
+            
+            # 總是返回 confirmation_needed，讓 AI 詢問客人確認
+            return {
+                "status": "confirmation_needed",
+                "found_order_id": found_id,
+                "found_subject": found_subject,
+                "message": f"I found an order with ID {found_id}. Please ask the user if this is correct."
+            }
+
+        # 3. Privacy & Detail Step (Only if Confirmed)
+        from datetime import datetime, timedelta
+        today_str = datetime.now().strftime("%Y-%m-%d")
+            
+        if data_source == 'pms':
+            # PMS data: Simple privacy check based on check-in date
+            try:
+                check_in_date = order_info['data']['check_in_date']
+                check_in = datetime.strptime(check_in_date, '%Y-%m-%d')
+                today = datetime.strptime(today_str, '%Y-%m-%d')
+                days_ago = (today - check_in).days
+                
+                if days_ago > 5:
+                    print(f"🚫 Blocking Old PMS Order (Over 5 days): {found_id}")
+                    return {
+                        "status": "blocked",
+                        "reason": "privacy_protection",
+                        "message": "System Alert: This order is historical (Check-in > 5 days ago). Access Denied."
+                    }
+                
+                print(f"✅ Privacy Check Passed for PMS Order: {found_id}")
                     
-                    if days_ago > 5:
-                        print(f"🚫 Blocking Old PMS Order (Over 5 days): {found_id}")
-                        return {
-                            "status": "blocked",
-                            "reason": "privacy_protection",
-                            "message": "System Alert: This order is historical (Check-in > 5 days ago). Access Denied."
-                        }
+                # Build response from PMS structured data
+                order_data = order_info['data']
+                
+                # 构建房号信息
+                room_numbers = order_data.get('room_numbers', [])
+                room_no_text = ', '.join(room_numbers) if room_numbers else '尚未安排'
+                
+                # 构建房型信息（不含人数）
+                rooms_info = []
+                for room in order_data.get('rooms', []):
+                    room_name = room.get('room_type_name') or room.get('room_type_code', '').strip()
+                    room_count = room.get('room_count', 1)
+                    room_text = f"{room_name} x{room_count}"
+                    rooms_info.append(room_text)
+                rooms_text = '\n                    '.join(rooms_info) if rooms_info else '無'
+                
+                # 订金信息（只显示已付订金）
+                deposit_paid = order_data.get('deposit_paid', 0)
+                deposit_text = ""
+                if deposit_paid and deposit_paid > 0:
+                    deposit_text = f"\n                    已付訂金: NT${deposit_paid:,.0f}"
+                
+                # OTA 订单号（优先显示，如果没有则显示 PMS 订单号）
+                ota_id = order_data.get('ota_booking_id', '')
+                display_order_id = ota_id if ota_id else order_data['booking_id']
+                
+                # 订房来源（優先從備註判斷，其次才用 OTA ID）
+                booking_source = "未知"
+                remarks = order_data.get('remarks', '')
+                # 優先檢查 remarks 中的關鍵字（放寬匹配條件）
+                if '官網' in remarks or '網路訂房' in remarks or '線上訂購' in remarks:
+                    booking_source = "官網"
+                elif 'agoda' in remarks.lower():
+                    booking_source = "Agoda"
+                elif 'booking.com' in remarks.lower() or 'booking' in remarks.lower():
+                    booking_source = "Booking"
+                # 如果 remarks 沒有，才用 OTA ID 判斷
+                elif ota_id:
+                    if ota_id.startswith('RMAG'):
+                        booking_source = "Agoda"
+                    elif ota_id.startswith('RMPGP'):
+                        booking_source = "官網"  # RMPGP 是官網訂單前綴
+                
+                # 組合姓名：優先使用 Last Name + First Name
+                last_name = order_data.get('guest_last_name', '').strip()
+                first_name = order_data.get('guest_first_name', '').strip()
+                if last_name and first_name:
+                    full_name = f"{last_name}{first_name}"
+                else:
+                    full_name = order_data.get('guest_name', '')
+                
+                # 訂單狀態檢查
+                status_name = order_data.get('status_name', '未知')
+                status_code = order_data.get('status_code', '')
+                
+                # 如果訂單已取消，只顯示取消訊息並立即返回
+                if status_code.strip() == 'D' or '取消' in status_name:
+                    return {
+                        "status": "cancelled",
+                        "order_id": display_id if 'display_id' in locals() else order_data.get('booking_id'),
+                        "message": """⚠️ 訂單狀態：已取消
+
+此訂單已經取消，無法辦理入住。
+如有疑問，請聯繫櫃檯：(03) 832-5700"""
+                    }
+                else:
+                    # 正常訂單：顯示核對資訊
                     
-                    print(f"✅ Privacy Check Passed for PMS Order: {found_id}")
-                    
-                    # Build response from PMS structured data
-                    order_data = order_info['data']
-                    
-                    # 构建房号信息
-                    room_numbers = order_data.get('room_numbers', [])
-                    room_no_text = ', '.join(room_numbers) if room_numbers else '尚未安排'
-                    
-                    # 构建房型信息（不含人数）
+                    # 构建房型信息（只显示中文名稱）
                     rooms_info = []
                     for room in order_data.get('rooms', []):
-                        room_name = room.get('room_type_name') or room.get('room_type_code', '').strip()
-                        room_count = room.get('room_count', 1)
+                        # PMS API 返回大寫鍵名，需要處理大小寫
+                        room_code = room.get('ROOM_TYPE_CODE') or room.get('room_type_code', '')
+                        room_code = room_code.strip() if room_code else ''
+                        
+                        # 優先使用房型代碼查詢中文名稱
+                        if room_code in self.room_types:
+                            room_name = self.room_types[room_code]['zh']
+                        else:
+                            room_name = room.get('ROOM_TYPE_NAME') or room.get('room_type_name') or room_code
+                        
+                        room_count = room.get('ROOM_COUNT') or room.get('room_count', 1)
                         room_text = f"{room_name} x{room_count}"
                         rooms_info.append(room_text)
-                    rooms_text = '\n                    '.join(rooms_info) if rooms_info else '無'
                     
-                    # 订金信息（只显示已付订金）
-                    deposit_paid = order_data.get('deposit_paid', 0)
-                    deposit_text = ""
-                    if deposit_paid and deposit_paid > 0:
-                        deposit_text = f"\n                    已付訂金: NT${deposit_paid:,.0f}"
-                    
-                    # OTA 订单号（优先显示，如果没有则显示 PMS 订单号）
-                    ota_id = order_data.get('ota_booking_id', '')
-                    display_order_id = ota_id if ota_id else order_data['booking_id']
-                    
-                    # 订房来源（優先從備註判斷，其次才用 OTA ID）
-                    booking_source = "未知"
-                    remarks = order_data.get('remarks', '')
-                    # 優先檢查 remarks 中的關鍵字
-                    if '官網' in remarks or '網路訂房' in order_data.get('guest_name', ''):
-                        booking_source = "官網"
-                    elif 'agoda' in remarks.lower():
-                        booking_source = "Agoda"
-                    elif 'booking.com' in remarks.lower():
-                        booking_source = "Booking.com"
-                    # 如果 remarks 沒有，才用 OTA ID 判斷
-                    elif ota_id:
-                        if ota_id.startswith('RMAG'):
-                            booking_source = "Agoda"
-                        elif ota_id.startswith('RMPGP'):
-                            booking_source = "Booking.com"
-                    
-                    # 組合姓名：優先使用 Last Name + First Name
-                    last_name = order_data.get('guest_last_name', '').strip()
-                    first_name = order_data.get('guest_first_name', '').strip()
-                    if last_name and first_name:
-                        full_name = f"{last_name}{first_name}"
-                    else:
-                        full_name = order_data.get('guest_name', '')
-                    
-                    # 訂單狀態檢查
-                    status_name = order_data.get('status_name', '未知')
-                    status_code = order_data.get('status_code', '')
-                    
-                    # 如果訂單已取消，只顯示取消訊息
-                    if status_code.strip() == 'D' or '取消' in status_name:
-                        clean_body = f"""
-                    ⚠️ 訂單狀態：已取消
-                    
-                    此訂單已經取消，無法辦理入住。
-                    如有疑問，請聯繫櫃檯：(03) 832-5700
-                    """
-                    else:
-                        # 正常訂單：顯示核對資訊
-                        
-                        # 构建房型信息（只显示中文名称）
-                        rooms_info = []
-                        for room in order_data.get('rooms', []):
-                            # PMS API 返回大寫鍵名，需要處理大小寫
-                            room_code = room.get('ROOM_TYPE_CODE') or room.get('room_type_code', '')
-                            room_code = room_code.strip() if room_code else ''
-                            
-                            # 優先使用房型代碼查詢中文名稱
+                    # 如果 rooms 為空，嘗試從 remarks 解析房型
+                    if not rooms_info and remarks:
+                        import re
+                        # 匹配「產品名稱: 官網優惠價SD」或類似格式
+                        room_match = re.search(r'產品名稱[：:]\s*[^/]*?([A-Z]{2,3})(?:\s|/|$)', remarks)
+                        if room_match:
+                            room_code = room_match.group(1).strip()
                             if room_code in self.room_types:
                                 room_name = self.room_types[room_code]['zh']
-                            else:
-                                room_name = room.get('ROOM_TYPE_NAME') or room.get('room_type_name') or room_code
-                            
-                            room_count = room.get('ROOM_COUNT') or room.get('room_count', 1)
-                            room_text = f"{room_name} x{room_count}"
-                            rooms_info.append(room_text)
-                        rooms_text = '\n                    '.join(rooms_info) if rooms_info else '無'
-                        
-                        # 订金信息（只显示已付订金，如有）
-                        deposit_paid = order_data.get('deposit_paid', 0)
-                        deposit_text = ""
-                        if deposit_paid and deposit_paid > 0:
-                            deposit_text = f"\n                    已付訂金: NT${deposit_paid:,.0f}"
-                        
-                        
-                        # 早餐資訊（從房價代號或備註判斷）
-                        breakfast = "有"  # 預設有早餐
-                        
-                        # 檢查備註中的產品名稱
-                        if '不含早' in remarks:
-                            breakfast = "無"
-                        
-                        
-                        # 也檢查房型名稱
-                        for room in order_data.get('rooms', []):
-                            room_type_name = room.get('room_type_name')
-                            if room_type_name and '不含早' in room_type_name:
-                                breakfast = "無"
-                                break
-                        
-                        
-                        
-                        clean_body = f"""
-                    訂單來源: {booking_source}
-                    訂單編號: {ota_id if ota_id else order_data['booking_id']}
-                    訂房人姓名: {full_name}
-                    聯絡電話: {order_data.get('contact_phone', '未提供')}
-                    入住日期: {order_data['check_in_date']}
-                    退房日期: {order_data['check_out_date']} (共 {order_data['nights']} 晚)
-                    房型: {rooms_text}{deposit_text}
-                    早餐: {breakfast}
-                    """
+                                rooms_info.append(f"{room_name} x1")
                     
-                except Exception as e:
-                    print(f"❌ PMS Privacy check error: {e}")
-                    return {
-                        "status": "blocked",
-                        "reason": "system_error",
-                        "message": "Privacy verification system encountered an error."
-                    }
+                    rooms_text = '\n                    '.join(rooms_info) if rooms_info else '無'
                     
-            else:
-                # Gmail data: Original LLM-based privacy check
-                body = order_info.get('body', '')
-
-                # Remove sensitive blocks first (CSS/Script)
-                clean_body = re.sub(r'<style.*?>.*?</style>', '', body, flags=re.DOTALL | re.IGNORECASE)
-                clean_body = re.sub(r'<script.*?>.*?</script>', '', clean_body, flags=re.DOTALL | re.IGNORECASE)
-                # Remove remaining tags
-                clean_body = re.sub(r'<[^>]+>', ' ', clean_body)
-                # Collapse whitespace
-                clean_body = re.sub(r'\s+', ' ', clean_body).strip()
-                
-                print(f"📧 Cleaned Email Body Preview (First 500 chars):\n{clean_body[:500]}") # Debug Log
-
-                validation_prompt = f"""
-                Task: Check-in Date Privacy Verification.
-                
-                Current Date: {today_str}
-                Email Text Content:
-                {clean_body[:3000]}
-                
-                Instructions:
-                1. Search for "Check-in" or "入住日期" in the content.
-                2. Extract the date text (e.g., "Dec 14, 2025" or "2025-12-14").
-                3. Parse it to YYYY-MM-D.
-                4. Calculate DAYS_AGO = Current Date - Check-in Date.
-                5. Logic:
-                   - If Check-in Date is in the FUTURE (DAYS_AGO < 0): ALLOW (Result: YES)
-                   - If DAYS_AGO >= 0 and DAYS_AGO <= 5: ALLOW (Result: YES)
-                   - If DAYS_AGO > 5: BLOCK (Result: NO)
-                   - If Date Not Found: BLOCK (Result: NO)
-                
-                Examples:
-                - Today: 2025-12-11, Check-in: 2025-12-14 → DAYS_AGO = -3 → ALLOW (Future booking)
-                - Today: 2025-12-11, Check-in: 2025-12-10 → DAYS_AGO = 1 → ALLOW (Recent)
-                - Today: 2025-12-11, Check-in: 2025-12-05 → DAYS_AGO = 6 → BLOCK (Too old)
-                
-                Output Required Format:
-                REASON: [Found Date: X, Days Ago: Y, Decision: Valid/Invalid because...]
-                RESULT: [YES/NO]
+                    # 早餐資訊（從房價代號或備註判斷）
+                    breakfast = "含早餐"  # 預設有早餐
+                    
+                    # 檢查備註中的產品名稱
+                    if '不含早' in remarks or '無早' in remarks:
+                        breakfast = "不含早餐"
+                    
+                    # 也檢查房型名稱
+                    for room in order_data.get('rooms', []):
+                        room_type_name = room.get('room_type_name')
+                        if room_type_name and '不含早' in room_type_name:
+                            breakfast = "不含早餐"
+                            break
+                    
+                    # 組合顯示訊息
+                    # 只顯示 OTA 編號 (ota_id)，如果沒有則回退到 booking_id
+                    display_id = ota_id if ota_id else order_data.get('booking_id', '未知')
+                    
+                    # 電話格式化：移除國際電話前綴並提取台灣手機號碼
+                    raw_phone = order_data.get('contact_phone', '')
+                    import re
+                    phone_match = re.search(r'(09\d{8})', raw_phone)
+                    formatted_phone = phone_match.group(1) if phone_match else raw_phone
+                    
+                    clean_body = f"""
+                訂單來源: {booking_source}
+                預約編號: {display_id}
+                訂房人姓名: {full_name}
+                聯絡電話: {formatted_phone}
+                入住日期: {order_data['check_in_date']}
+                退房日期: {order_data['check_out_date']} (共 {order_data['nights']} 晚)
+                房型: {rooms_text}
+                早餐: {breakfast}
                 """
                 
-                try:
-                    # Use the Validator Model
-                    validator_response = self.validator_model.generate_content(validation_prompt)
-                    full_response = validator_response.text.strip()
-                    print(f"🤔 Validator Thought Process:\n{full_response}")
+            except Exception as e:
+                print(f"❌ PMS Privacy check error: {e}")
+                return {
+                    "status": "blocked",
+                    "reason": "system_error",
+                    "message": "Privacy verification system encountered an error."
+                }
+                
+        else:
+            # Gmail data: Original LLM-based privacy check
+            body = order_info.get('body', '')
+
+            # Remove sensitive blocks first (CSS/Script)
+            clean_body = re.sub(r'<style.*?>.*?</style>', '', body, flags=re.DOTALL | re.IGNORECASE)
+            clean_body = re.sub(r'<script.*?>.*?</script>', '', clean_body, flags=re.DOTALL | re.IGNORECASE)
+            # Remove remaining tags
+            clean_body = re.sub(r'<[^>]+>', ' ', clean_body)
+            # Collapse whitespace
+            clean_body = re.sub(r'\s+', ' ', clean_body).strip()
+            
+            print(f"📧 Cleaned Email Body Preview (First 500 chars):\n{clean_body[:500]}") # Debug Log
+
+            validation_prompt = f"""
+            Task: Check-in Date Privacy Verification.
+            
+            Current Date: {today_str}
+            Email Text Content:
+            {clean_body[:3000]}
+            
+            Instructions:
+            1. Search for "Check-in" or "入住日期" in the content.
+            2. Extract the date text (e.g., "Dec 14, 2025" or "2025-12-14").
+            3. Parse it to YYYY-MM-D.
+            4. Calculate DAYS_AGO = Current Date - Check-in Date.
+            5. Logic:
+               - If Check-in Date is in the FUTURE (DAYS_AGO < 0): ALLOW (Result: YES)
+               - If DAYS_AGO >= 0 and DAYS_AGO <= 5: ALLOW (Result: YES)
+               - If DAYS_AGO > 5: BLOCK (Result: NO)
+               - If Date Not Found: BLOCK (Result: NO)
+            
+            Examples:
+            - Today: 2025-12-11, Check-in: 2025-12-14 → DAYS_AGO = -3 → ALLOW (Future booking)
+            - Today: 2025-12-11, Check-in: 2025-12-10 → DAYS_AGO = 1 → ALLOW (Recent)
+            - Today: 2025-12-11, Check-in: 2025-12-05 → DAYS_AGO = 6 → BLOCK (Too old)
+            
+            Output Required Format:
+            REASON: [Found Date: X, Days Ago: Y, Decision: Valid/Invalid because...]
+            RESULT: [YES/NO]
+            """
+            
+            try:
+                # Use the Validator Model
+                validator_response = self.validator_model.generate_content(validation_prompt)
+                full_response = validator_response.text.strip()
+                print(f"🤔 Validator Thought Process:\n{full_response}")
+                
+                # Parse Result (handle both "RESULT: YES" and "RESULT: [YES]")
+                match = re.search(r'RESULT:\s*\[?(YES|NO)\]?', full_response, re.IGNORECASE)
+                result = match.group(1).upper() if match else 'NO'
+                
+                print(f"🔒 Privacy Validator Final Decision: {result} (Today: {today_str})")
                     
-                    # Parse Result (handle both "RESULT: YES" and "RESULT: [YES]")
-                    match = re.search(r'RESULT:\s*\[?(YES|NO)\]?', full_response, re.IGNORECASE)
-                    result = match.group(1).upper() if match else 'NO'
-                    
-                    print(f"🔒 Privacy Validator Final Decision: {result} (Today: {today_str})")
-                    
-                    if result != 'YES':
-                         # Block it
-                         print(f"🚫 Blocking Old Order (Over 5 days): {found_id}")
-                         return {
-                            "status": "blocked",
-                            "reason": "privacy_protection",
-                            "message": "System Alert: This order is historical (Check-in > 5 days ago). Access Denied."
-                        }
-                    
-                except Exception as e:
-                    # FAIL SAFE: If validation fails, BLOCK access rather than allowing.
+                if result != 'YES':
+                    # Block it
+                    print(f"🚫 Blocking Old Order (Over 5 days): {found_id}")
                     return {
                         "status": "blocked",
-                        "reason": "system_error",
-                        "message": "System Alert: Privacy verification system encountered an error. Access temporarily denied to prevent data leak."
+                        "reason": "privacy_protection",
+                        "message": "System Alert: This order is historical (Check-in > 5 days ago). Access Denied."
                     }
+                    
+            except Exception as e:
+                # FAIL SAFE: If validation fails, BLOCK access rather than allowing.
+                return {
+                    "status": "blocked",
+                    "reason": "system_error",
+                    "message": "System Alert: Privacy verification system encountered an error. Access temporarily denied to prevent data leak."
+                }
 
-            # PASSED! User is allowed to see the order details.
-            print(f"✅ Privacy Check Passed for Order: {found_id}")
-            
-            # 儲存訂單資料到 JSON（新功能）
-            order_data = {
-                'order_id': found_id,
-                'line_user_id': self.current_user_id,  # 添加用戶 ID
-                'subject': found_subject,
-                'body': clean_body,
-                'check_in': None,  # 稍後由 LLM 提取
-                'check_out': None,
-                'room_type': None,
-                'guest_name': None,
-                'booking_source': None
-            }
-            
-            # 嘗試從 body 提取基本資訊（簡易版）
+        # PASSED! User is allowed to see the order details.
+        print(f"✅ Privacy Check Passed for Order: {found_id}")
+        
+        # 儲存訂單資料到 JSON
+        order_data = {
+            'order_id': found_id,
+            'line_user_id': self.current_user_id,
+            'subject': found_subject,
+            'body': clean_body if clean_body else 'N/A',
+            'check_in': None,
+            'check_out': None,
+            'room_type': None,
+            'guest_name': None,
+            'booking_source': None
+        }
+        
+        # 從 body 提取基本資訊 (If search from Gmail)
+        if data_source == 'gmail':
             import re as regex_lib
             from datetime import datetime as dt
             
-            # 提取入住日期（支援多種格式）
-            # Format 1: "6-Dec-2025" or "06-Dec-2025"
+            # 提取入住日期
             checkin_match = regex_lib.search(r'Check-in.*?(\d{1,2}-[A-Za-z]{3}-\d{4})', clean_body)
             if checkin_match:
                 try:
-                    # 轉換為標準格式 YYYY-MM-DD
                     date_obj = dt.strptime(checkin_match.group(1), '%d-%b-%Y')
                     order_data['check_in'] = date_obj.strftime('%Y-%m-%d')
                 except:
                     pass
             
-            # Format 2: "2025-12-06" (備用)
             if not order_data['check_in']:
                 checkin_match2 = regex_lib.search(r'Check-in.*?(\d{4}-\d{2}-\d{2})', clean_body)
                 if checkin_match2:
                     order_data['check_in'] = checkin_match2.group(1)
             
-            # 提取退房日期（支援多種格式）
+            # 提取退房日期
             checkout_match = regex_lib.search(r'Check-out.*?(\d{1,2}-[A-Za-z]{3}-\d{4})', clean_body)
             if checkout_match:
                 try:
@@ -866,91 +890,54 @@ Your Knowledge Base (FAQ):
                     order_data['check_out'] = checkout_match2.group(1)
             
             # 提取客人姓名
-            # 只提取 First Name，避免包含 "Customer Last Name" 等文字
             name_match = regex_lib.search(r'Customer First Name.*?[：:]\s*([A-Za-z\s]+?)(?:\s+Customer|$)', clean_body)
             if name_match:
                 order_data['guest_name'] = name_match.group(1).strip()
             else:
-                # 備用：嘗試從「姓名:」提取
                 name_match2 = regex_lib.search(r'姓名[：:]\s*([^\n,]+?)(?:\s*,|\s*電話|$)', clean_body)
                 if name_match2:
                     order_data['guest_name'] = name_match2.group(1).strip()
-                else:
-                    order_data['guest_name'] = None
 
-            
-            # 提取電話號碼（支援多種格式）
-            # Format 1: "電話: 0912345678" 或 "電話：0912345678"
+            # 提取電話號碼
             phone_match = regex_lib.search(r'電話[：:]\s*(09\d{8})', clean_body)
             if not phone_match:
-                # Format 2: 單獨出現的手機號碼
                 phone_match = regex_lib.search(r'\b(09\d{8})\b', clean_body)
             if phone_match:
                 order_data['phone'] = phone_match.group(1)
-            else:
-                order_data['phone'] = None
             
-            # 提取房型（支援多種格式）
-            # 直接查找 "Standard/Deluxe/etc + Room" 模式
+            # 提取房型
             room_match = regex_lib.search(r'\b((?:Standard|Deluxe|Superior|Executive|Family|VIP|Premium|Classic|Ocean View|Sea View|Economy|Accessible|Disability Access)\s+(?:Single|Double|Twin|Triple|Quadruple|Family|Suite|Queen Room)?\s*(?:Room|Suite)?[^,\n]*?(?:Non-Smoking|Smoking|with.*?View|with.*?Balcony)?)', clean_body, regex_lib.IGNORECASE)
-            
             if not room_match:
-                # 備用：查找特定房型關鍵字
                 room_match = regex_lib.search(r'\b(Quadruple Room - Disability Access|Double Room - Disability Access|Double Room with Balcony and Sea View|Quadruple Room with Sea View|Superior Queen Room with Two Queen Beds)', clean_body, regex_lib.IGNORECASE)
             
             if room_match:
                 raw_room_type = room_match.group(1).strip()
-                # 清理尾部數字和多餘文字
                 raw_room_type = regex_lib.sub(r'\s+\d+\s*$', '', raw_room_type)
                 raw_room_type = regex_lib.sub(r'\s+No\..*$', '', raw_room_type)
                 raw_room_type = regex_lib.sub(r'\s+', ' ', raw_room_type).strip()
-                
-                # 載入房型對應表
-                try:
-                    import json as json_lib
-                    base_dir = os.path.dirname(os.path.abspath(__file__))
-                    mapping_file = os.path.join(base_dir, 'room_type_mapping.json')
-                    with open(mapping_file, 'r', encoding='utf-8') as f:
-                        room_mapping = json_lib.load(f)['room_type_mapping']
-                    
-                    # 查找對應的內部代號
-                    if raw_room_type in room_mapping:
-                        order_data['room_type'] = room_mapping[raw_room_type]
-                    else:
-                        # 如果找不到精確匹配，保留原始名稱
-                        order_data['room_type'] = raw_room_type
-                except Exception as e:
-                    print(f"⚠️ 無法載入房型對應表: {e}")
-                    order_data['room_type'] = raw_room_type
-            else:
-                order_data['room_type'] = None
+                order_data['room_type'] = raw_room_type
             
             # 提取訂房來源
             if 'agoda' in clean_body.lower():
                 order_data['booking_source'] = 'Agoda'
             elif 'booking.com' in clean_body.lower():
-                order_data['booking_source'] = 'Booking.com'
-            
-            # 儲存訂單
-            try:
-                self.logger.save_order(order_data)
-                print(f"💾 Order {found_id} saved to database")
-                
-                # 建立訂單與 LINE 用戶的關聯
-                if self.current_user_id:
-                    self.logger.link_order_to_user(found_id, self.current_user_id)
-                    print(f"🔗 Order {found_id} linked to LINE User {self.current_user_id}")
-            except Exception as e:
-                print(f"⚠️ Failed to save order: {e}")
-            
-            # Return FULL details with pre-formatted display text + MANDATORY INSTRUCTION
-            return {
-                "status": "found",
-                "order_id": found_id,
-                "subject": found_subject,
-                "body": clean_body,
-                "formatted_display": clean_body,  # 預格式化的完整訂單文本，LLM 應直接原樣輸出
-                "NEXT_RESPONSE_INSTRUCTION": f"""
+                order_data['booking_source'] = 'Booking'
+        
+        # 儲存訂單
+        try:
+            self.logger.save_order(order_data)
+            if self.current_user_id:
+                self.logger.link_order_to_user(found_id, self.current_user_id)
+        except Exception as e:
+            print(f"⚠️ Failed to save order: {e}")
+        
+        return {
+            "status": "found",
+            "order_id": found_id,
+            "subject": found_subject,
+            "body": clean_body,
+            "formatted_display": clean_body,
+            "NEXT_RESPONSE_INSTRUCTION": f"""
 🚨🚨🚨 IMMEDIATE ACTION REQUIRED 🚨🚨🚨
 
 YOU MUST FOLLOW THIS EXACT OUTPUT SEQUENCE:
@@ -966,7 +953,7 @@ STEP 2: ONLY AFTER showing all above details, then add weather and contact.
 
 ✅ You MUST output Step 1 FIRST, then Step 2
 """
-            }
+        }
 
 
     def update_guest_info(self, order_id: str, info_type: str, content: str):
@@ -989,6 +976,12 @@ STEP 2: ONLY AFTER showing all above details, then add weather and contact.
                 "status": "error",
                 "message": f"Order {order_id} not found in database. Please check the order first."
             }
+        
+        # 確保訂單有 line_user_id（從當前用戶獲取）
+        if hasattr(self, 'current_user_id') and self.current_user_id:
+            if 'line_user_id' not in self.logger.orders[order_id] or not self.logger.orders[order_id]['line_user_id']:
+                self.logger.orders[order_id]['line_user_id'] = self.current_user_id
+                print(f"📝 已記錄 line_user_id: {self.current_user_id}")
         
         # 更新資料
         success = self.logger.update_guest_request(order_id, info_type, content)
@@ -1436,12 +1429,12 @@ STEP 2: ONLY AFTER showing all above details, then add weather and contact.
             '空房', '想住', '要住', '可以住', '今天訂', '今日訂',
             '今天', '今日'  # 單獨說「今天」也視為訂房意圖
         ]
-        
         return any(kw in message for kw in booking_keywords)
 
     def _has_order_number(self, message: str) -> bool:
-        """檢查訊息中是否包含訂單編號"""
-        return bool(re.search(r'\b\d{5,}\b', message))
+        """檢查訊息中是否包含訂單編號（排除電話號碼）"""
+        from helpers import IntentDetector
+        return IntentDetector.has_order_number(message)
 
     def generate_response(self, user_question, user_id="default_user", display_name=None):
         # 設定當前用戶 ID，供工具函數使用
@@ -1458,18 +1451,25 @@ STEP 2: ONLY AFTER showing all above details, then add weather and contact.
         # 路由邏輯 - 決定使用哪個處理器
         # ============================================
         
-        # 優先檢查 1: 訂單查詢處理器（進行中的流程）
-        if self.order_query_handler.is_active(user_id):
+        # 優先檢查 1: 訂單查詢處理器 (處理進行中流程 或 新的訂單編號)
+        has_order = self._has_order_number(user_question)
+        # 優先檢查是否在訂單查詢流程中
+        if self.order_query_handler.is_active(user_id) or has_order:
             order_response = self.order_query_handler.handle_message(user_id, user_question, display_name)
             if order_response:
                 self.logger.log(user_id, "Bot", order_response)
                 return order_response
         
-        # 注意：訂單編號判斷現在由 AI 統一處理（根據上下文判斷數字是電話還是訂單編號）
-        # 當日預訂也由 AI 統一處理（透過 check_today_availability 和 create_same_day_booking Functions）
+        # 檢查是否在當日預訂流程中
+        if self.state_machine.get_active_handler_type(user_id) == 'same_day_booking':
+            booking_response = self.same_day_handler.handle_message(user_id, user_question, display_name)
+            if booking_response:
+                self.logger.log(user_id, "Bot", booking_response)
+                return booking_response
+
+        # 注意：雖然 AI 可以處理部分情境，但狀態機處理器在「進行中流程」具有最高優先權
         
         # ============================================
-        # 一般 AI 對話
         # ============================================
 
         # Check for pending context (e.g. Order ID from previous image)

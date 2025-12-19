@@ -5,13 +5,15 @@ import { WebSocketServer } from 'ws';
 import { readFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { beautifyBookings } from './services/ai-beautify.js';
-import { getBookingSource } from './helpers/bookingSource.js';
+import path from 'path';
 import dotenv from 'dotenv';
-import path from 'path'; // Added missing import
+import { getSupplement, getAllSupplements, updateSupplement } from './helpers/db.js';
+import { getBookingSource } from './helpers/bookingSource.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+dotenv.config({ path: join(__dirname, '../.env') });
 
 // 載入 KTW-backend 專用 .env
 dotenv.config({ path: join(__dirname, '../.env') });
@@ -21,7 +23,10 @@ const PORT = 3000;
 const WS_PORT = 3001;
 
 // Bot 的 guest_orders.json 路徑
-const GUEST_ORDERS_PATH = join(__dirname, '../../chat_logs/guest_orders.json');
+const GUEST_ORDERS_PATH = join(__dirname, '../../data/chat_logs/guest_orders.json');
+
+// Bot 的 user_profiles.json 路徑
+const USER_PROFILES_PATH = join(__dirname, '../../data/chat_logs/user_profiles.json');
 
 // 讀取 Bot 收集的訂單資訊
 function getGuestOrders() {
@@ -36,14 +41,33 @@ function getGuestOrders() {
     return {};
 }
 
+// 讀取 Bot 的用戶個人資料（包含 display_name）
+function getUserProfiles() {
+    try {
+        if (existsSync(USER_PROFILES_PATH)) {
+            const data = readFileSync(USER_PROFILES_PATH, 'utf-8');
+            return JSON.parse(data);
+        }
+    } catch (err) {
+        console.error('讀取 user_profiles.json 失敗:', err.message);
+    }
+    return {};
+}
+
 // 智慧匹配：從 guest_orders.json 找出對應的 Bot 收集資訊
 function matchGuestOrder(booking, guestOrders) {
-    // 1. 優先用訂單編號精確匹配
+    // 1. 優先用 PMS 訂單編號精確匹配
     if (guestOrders[booking.booking_id]) {
         return guestOrders[booking.booking_id];
     }
 
-    // 2. 用姓名+入住日期模糊匹配
+    // 2. 嘗試用 OTA 訂單編號匹配（Bot 可能用 OTA ID 記錄）
+    if (booking.ota_booking_id && guestOrders[booking.ota_booking_id]) {
+        console.log(`🔗 OTA ID 匹配成功: ${booking.ota_booking_id}`);
+        return guestOrders[booking.ota_booking_id];
+    }
+
+    // 3. 用姓名+入住日期模糊匹配
     const bookingName = booking.guest_name?.toLowerCase().replace(/\s+/g, '');
     const bookingDate = booking.check_in_date;
 
@@ -64,8 +88,14 @@ function matchGuestOrder(booking, guestOrders) {
 }
 
 // 🔄 共用的訂單資料處理函數（供今日/昨日/明日 API 使用）
-function processBookings(bookings, guestOrders) {
-    // 使用全域的 roomTypeMap（DRY 原則 - 避免重複定義）
+async function processBookings(bookings, guestOrders, profiles = {}) {
+    // 取得所有訂單 ID 用於批次查詢 SQLite
+    const bookingIds = bookings.map(b => b.booking_id);
+    const supplements = await getAllSupplements(bookingIds);
+    const supplementMap = supplements.reduce((acc, curr) => {
+        acc[curr.booking_id] = curr;
+        return acc;
+    }, {});
 
     return bookings.map(booking => {
         // 1. OTA 訂單號
@@ -97,8 +127,9 @@ function processBookings(bookings, guestOrders) {
             if (digitsOnly.length >= 9) formattedPhone = '0' + digitsOnly.slice(-9);
         }
 
-        // 6. 整合 Bot 資料
+        // 6. 整合 Bot 與 SQLite 資料
         const botInfo = matchGuestOrder(booking, guestOrders);
+        const supplement = supplementMap[booking.booking_id];
 
         // 7. 處理房型
         let roomTypeName = '未知房型';
@@ -130,7 +161,8 @@ function processBookings(bookings, guestOrders) {
             guest_name: fullName,
             registered_name: booking.registered_name || null,
             customer_remarks: booking.customer_remarks || null,
-            contact_phone: formattedPhone,
+            contact_phone: supplement?.confirmed_phone || botInfo?.phone || formattedPhone, // 優先級: SQLite > Bot > PMS
+            phone_from_bot: !!(supplement?.confirmed_phone || botInfo?.phone), // 標識是否來自 Bot
             check_in_date: booking.check_in_date,
             check_out_date: booking.check_out_date,
             nights: booking.nights,
@@ -143,18 +175,16 @@ function processBookings(bookings, guestOrders) {
             balance_due: balanceDue,
             room_type_name: roomTypeName,
             room_numbers: booking.room_numbers || (booking.rooms && booking.rooms.length > 0 ? booking.rooms.map(r => r.room_number).filter(Boolean) : []),
-            line_name: botInfo?.display_name || null,
-            arrival_time_from_bot: botInfo?.arrival_time || null,
-            special_request_from_bot: null
+            // LINE 姓名優先級: SQLite > profiles(根據 line_user_id) > botInfo.line_display_name
+            line_name: supplement?.line_name || (botInfo?.line_user_id && profiles[botInfo.line_user_id]?.display_name) || botInfo?.line_display_name || null,
+            arrival_time_from_bot: supplement?.arrival_time || botInfo?.arrival_time || null,
+            special_request_from_bot: null,
+            staff_memo: supplement?.staff_memo || null // 新增櫃檯備註
         };
 
-        // 提取特殊需求
-        if (botInfo?.special_requests?.length) {
-            const lastRequest = botInfo.special_requests[botInfo.special_requests.length - 1];
-            if (lastRequest.includes('special_need:')) {
-                result.special_request_from_bot = lastRequest.split('special_need:')[1].trim();
-            }
-        }
+        // 10. 提取特殊需求 (A.I. 轉載)
+        const aiRequests = supplement?.ai_extracted_requests || (botInfo?.special_requests?.length ? botInfo.special_requests.join('; ') : null);
+        result.special_request_from_bot = aiRequests;
 
         return result;
     });
@@ -392,7 +422,8 @@ app.get('/api/pms/today-checkin', async (req, res) => {
             if (data.success && data.data) {
                 // 使用共用的資料處理函數
                 const guestOrders = getGuestOrders();
-                data.data = processBookings(data.data, guestOrders);
+                const profiles = getUserProfiles();
+                data.data = await processBookings(data.data, guestOrders, profiles);
             }
             res.json(data);
         } else {
@@ -461,7 +492,8 @@ app.get('/api/pms/yesterday-checkin', async (req, res) => {
             if (data.success && data.data) {
                 // 使用共用的資料處理函數
                 const guestOrders = getGuestOrders();
-                data.data = processBookings(data.data, guestOrders);
+                const profiles = getUserProfiles();
+                data.data = await processBookings(data.data, guestOrders, profiles);
             }
             res.json(data);
         } else {
@@ -485,7 +517,8 @@ app.get('/api/pms/tomorrow-checkin', async (req, res) => {
             if (data.success && data.data) {
                 // 使用共用的資料處理函數
                 const guestOrders = getGuestOrders();
-                data.data = processBookings(data.data, guestOrders);
+                const profiles = getUserProfiles();
+                data.data = await processBookings(data.data, guestOrders, profiles);
             }
             res.json(data);
         } else {
@@ -678,12 +711,21 @@ app.get('/api/pms/bookings/search', async (req, res) => {
 app.get('/api/pms/bookings/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const response = await fetch(`${PMS_API_BASE} /bookings/${id} `, {
+        const response = await fetch(`${PMS_API_BASE}/bookings/${id}`, {
             signal: AbortSignal.timeout(5000)
         });
 
         if (response.ok) {
             const data = await response.json();
+
+            // 嘗試合併本地擴充資料
+            if (data.success && data.data) {
+                const guestOrders = getGuestOrders();
+                const profiles = getUserProfiles();
+                const processed = await processBookings([data.data], guestOrders, profiles);
+                data.data = processed[0];
+            }
+
             res.json(data);
         } else {
             res.status(response.status).json({ success: false, error: 'Booking not found' });
@@ -693,6 +735,51 @@ app.get('/api/pms/bookings/:id', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
+
+// 更新或插入擴充資料 (Shared Memo / Phone / Arrival / Line Name)
+app.patch('/api/pms/supplements/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const data = req.body;
+
+        console.log(`📝 更新訂單 ${id} 的擴充資料:`, data);
+
+        await updateSupplement(id, data);
+
+        // 取得更新後的完整資料並廣播（可選）
+        const updated = await getSupplement(id);
+
+        res.json({
+            success: true,
+            message: '資料已儲存到 SQLite',
+            data: updated
+        });
+
+        // 推送到 WebSocket 前台同步更新 UI
+        broadcast({
+            type: 'supplement_update',
+            booking_id: id,
+            data: updated
+        });
+
+    } catch (error) {
+        console.error('Supplement Update Error:', error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// WebSocket 廣播輔助函數
+function broadcast(messageObj) {
+    const msg = JSON.stringify({
+        ...messageObj,
+        timestamp: new Date().toISOString()
+    });
+    wsClients.forEach(client => {
+        if (client.readyState === 1) {
+            client.send(msg);
+        }
+    });
+}
 
 // 根路由
 app.get('/', (req, res) => {

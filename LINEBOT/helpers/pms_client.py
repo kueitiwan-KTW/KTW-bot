@@ -20,24 +20,25 @@ class PMSClient:
         
         print(f"🔷 PMS Client initialized: base_url={self.base_url}, timeout={self.timeout}s, enabled={self.enabled}")
     
-    def get_booking_details(self, booking_id: str) -> Optional[Dict[str, Any]]:
+    def get_booking_details(self, booking_id: str, guest_name: Optional[str] = None, phone: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """
-        获取订单详细资料
+        獲取訂單詳細資料 (支援組合式驗證)
         
         Args:
-            booking_id: 订单编号
+            booking_id: 訂單編號
+            guest_name: (選填) 訂房人姓名，用於交叉核對
+            phone: (選填) 聯絡電話，用於交叉核對
             
         Returns:
-            订单资料字典，失败返回 None
+            訂單資料字典，失敗或資料不匹配返回 None
         """
         if not self.enabled:
             print("⚠️ PMS API is disabled")
             return None
         
         try:
-            # 清理订单号（移除前缀和空格）
+            # 清理訂單號
             clean_id = booking_id.strip()
-            # 移除可能的前缀（RMAG, RMPGP 等）
             import re
             clean_id = re.sub(r'^[A-Z]+', '', clean_id)
             
@@ -49,7 +50,30 @@ class PMSClient:
             if response.status_code == 200:
                 data = response.json()
                 if data.get('success'):
-                    print(f"✅ PMS API Success: booking_id={data['data']['booking_id']}")
+                    order_data = data['data']
+                    
+                    # 執行交叉核對 (如果提供了姓名或電話)
+                    if guest_name or phone:
+                        is_match = True
+                        pms_name = order_data.get('guest_name', '')
+                        pms_phone = order_data.get('contact_phone', '')
+                        
+                        if guest_name and guest_name not in pms_name:
+                            print(f"❌ Privacy Check Failed: Name mismatch ('{guest_name}' not in '{pms_name}')")
+                            is_match = False
+                        
+                        if phone:
+                            # 移除所有非數字進行比對
+                            clean_input_phone = re.sub(r'\D', '', phone)
+                            clean_pms_phone = re.sub(r'\D', '', pms_phone)
+                            if clean_input_phone and clean_input_phone not in clean_pms_phone:
+                                print(f"❌ Privacy Check Failed: Phone mismatch ('{clean_input_phone}' not in '{clean_pms_phone}')")
+                                is_match = False
+                        
+                        if not is_match:
+                            return None # 不匹配則視為沒查到，保護隱私
+                            
+                    print(f"✅ PMS API Success: booking_id={order_data['booking_id']}")
                     return data
                 else:
                     print(f"⚠️ PMS API returned success=false")
@@ -154,16 +178,24 @@ class PMSClient:
             return False
         
         try:
-            # 使用基础 URL 而非 v1
-            base = self.base_url.replace('/api/v1', '')
-            url = f"{base}/api/health"
+            # 使用基础 URL 而非 v1 路徑
+            # 如果 base_url 以 /api 結尾，health 應該在 /api/health
+            # 如果 base_url 以 /api/v1 結尾，health 仍應在 /api/health
+            if '/api/v1' in self.base_url:
+                url = self.base_url.replace('/api/v1', '/api/health')
+            elif self.base_url.endswith('/api'):
+                url = f"{self.base_url}/health"
+            else:
+                url = f"{self.base_url}/api/health"
+            
             print(f"🏥 Health Check: {url}")
             
             response = requests.get(url, timeout=2)
             
             if response.status_code == 200:
                 data = response.json()
-                if data.get('status') == 'ok':
+                # 兼容不同 API 的健康檢查回傳格式
+                if data.get('status') == 'ok' or data.get('success'):
                     print(f"✅ PMS API is healthy")
                     return True
             
@@ -296,6 +328,7 @@ class PMSClient:
             print(f"❌ 查詢當日預訂列表失敗: {e}")
             return None
     
+    
     def cancel_same_day_booking(self, order_id: str) -> Optional[Dict[str, Any]]:
         """
         取消當日預訂
@@ -334,6 +367,42 @@ class PMSClient:
         except Exception as e:
             print(f"❌ 取消訂單失敗: {e}")
             return None
+
+    def update_supplement(self, booking_id: str, data: Dict[str, Any]) -> bool:
+        """
+        更新訂單擴充資料（電話、抵達時間、特殊需求）
+        
+        Args:
+            booking_id: 訂單編號
+            data: 要更新的資料字典 (如 {'confirmed_phone': '...', 'arrival_time': '...'})
+            
+        Returns:
+            是否成功
+        """
+        if not self.enabled:
+            return False
+            
+        try:
+            # 清理訂單號
+            import re
+            clean_id = booking_id.strip()
+            clean_id = re.sub(r'^[A-Z]+', '', clean_id)
+            
+            url = f"{self.base_url}/pms/supplements/{clean_id}"
+            print(f"📡 API Sync Request: PATCH {url}")
+            
+            response = requests.patch(url, json=data, timeout=self.timeout)
+            
+            if response.status_code == 200:
+                print(f"✅ 擴充資料同步成功: {clean_id}")
+                return True
+            else:
+                print(f"⚠️ 同步失敗: HTTP {response.status_code} - {response.text}")
+                return False
+                
+        except Exception as e:
+            print(f"❌ 同步擴充資料失敗: {e}")
+            return False
 
 # 测试代码
 if __name__ == "__main__":

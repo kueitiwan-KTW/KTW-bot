@@ -559,21 +559,27 @@ function connectWebSocket() {
         if (notifications.value.length > 20) notifications.value.pop()
       }
       
-      // Bot 更新客戶資訊（電話、抵達時間、特殊需求）
-      if (msg.type === 'update_guest') {
-        const { booking_id, guest_name, phone, arrival_time, special_request } = msg.data
-        // 在今日入住列表中找到對應的客人
-        const guest = todayGuests.value.find(g => 
-          g.booking_id === booking_id || 
-          g.guest_name?.includes(guest_name) ||
-          guest_name?.includes(g.guest_name)
-        )
-        if (guest) {
-          if (phone) guest.phone_from_bot = phone
-          if (arrival_time) guest.arrival_time_from_bot = arrival_time
-          if (special_request) guest.special_request_from_bot = special_request
-          console.log('✅ 已更新客戶資料:', guest_name)
-        }
+      // Bot 或櫃檯更新客戶擴充資訊（電話、抵達時間、特殊需求、櫃檯備註）
+      if (msg.type === 'update_guest' || msg.type === 'supplement_update') {
+        const payload = msg.data;
+        const booking_id = payload.booking_id;
+        
+        // 更新所有列表中的對應訂單
+        const updateInList = (list) => {
+          const item = list.find(g => g.pms_id === booking_id || g.booking_id === booking_id);
+          if (item) {
+            if (payload.confirmed_phone) item.contact_phone = payload.confirmed_phone;
+            if (payload.arrival_time) item.arrival_time_from_bot = payload.arrival_time;
+            if (payload.ai_extracted_requests) item.special_request_from_bot = payload.ai_extracted_requests;
+            if (payload.staff_memo !== undefined) item.staff_memo = payload.staff_memo;
+            if (payload.line_name) item.line_name = payload.line_name;
+            console.log(`✅ 已同步訂單 ${booking_id} 的擴充資料`);
+          }
+        };
+
+        updateInList(todayGuests.value);
+        updateInList(yesterdayGuests.value);
+        updateInList(tomorrowGuests.value);
       }
     } catch (e) {
       console.error('解析通知失敗:', e)

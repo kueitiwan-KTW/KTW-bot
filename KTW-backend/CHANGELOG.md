@@ -4,6 +4,47 @@
 
 ---
 
+## [1.1.1] - 2025-12-19
+
+### ✨ 資料同步、匹配效率與標識強化
+
+#### 1. 資料路徑與檔案讀取修復
+**檔案**: `src/index.js` (L26)
+- **修正**：`GUEST_ORDERS_PATH` 路徑補上 `data/` 前綴，修正為 `../../data/chat_logs/guest_orders.json`，確保能正確讀取 Bot 產出的訂單資料。
+
+#### 2. OTA 訂單編號智能匹配
+**檔案**: `src/index.js` (L47-51)
+- **變更**：`matchGuestOrder` 函數新增 OTA ID 匹配邏輯。機器人收集時常使用外部訂單號（如 RMAG...），現在後端能自動關聯 PMS 內部 ID 與外部 OTA ID。
+
+#### 3. LINE 用戶資料整合 (Display Name)
+**檔案**: `src/index.js` (L26-44, L91-178)
+- **新功能**：新增 `getUserProfiles()` 讀取 `user_profiles.json`。
+- **邏輯優化**：`processBookings` 函數現在會根據 `line_user_id` 自動從 profiles 查找客人的 LINE 暱稱。
+- **欄位優先級**：LINE 姓名顯示邏輯優化為 `SQLite > profiles > Bot-extracted > null`。
+
+#### 4. 前端來源標識 (Phone Origin)
+**檔案**: `src/index.js` (L149)
+- **新欄位**：新增 `phone_from_bot` (Boolean) 欄位，用以標示電話號碼是否經由 Bot 驗證或提供，供前端 UI 變色參考。
+
+---
+
+## [1.1.0] - 2025-12-18
+
+### ✨ 新功能：SQLite 擴充資料持久化與共享備註 API
+
+#### 1. 資料庫層 (SQLite)
+- **檔案**: `src/helpers/db.js`
+- **實作**: 建立 `guest_supplements` 表，支援 `booking_id`, `confirmed_phone`, `arrival_time`, `staff_memo`, `ai_extracted_requests` 等欄位。
+
+#### 2. API 端點擴充
+- **檔案**: `src/index.js`
+- **新增**: `PATCH /api/pms/supplements/:id` - 支援部分更新訂單擴充資料，並透過 WebSocket 廣播。
+- **優化**: `async processBookings` - 讀取 PMS 資料時自動 Left Join SQLite 資料庫，合併最新的電話、時間與備註。
+
+#### 3. 核心邏輯升級
+- **檔案**: `src/index.js`
+- **修改**: 將 `processBookings` 轉為非同步函數，並在 `today-checkin`, `tomorrow-checkin` 等路由中 awaiting。
+
 ## [1.0.1] - 2025-12-17
 
 ### ✨ 新功能：已 KEY 訂單自動匹配驗證

@@ -7,10 +7,12 @@ from .gmail_helper import GmailHelper
 from .google_services import GoogleServices
 from .weather_helper import WeatherHelper
 from .pms_client import PMSClient
+from .intent_detector import IntentDetector
 
 __all__ = [
     'GmailHelper',
     'GoogleServices',
     'WeatherHelper',
-    'PMSClient'
+    'PMSClient',
+    'IntentDetector'
 ]

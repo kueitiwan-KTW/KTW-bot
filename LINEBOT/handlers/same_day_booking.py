@@ -10,21 +10,11 @@ import os
 
 
 class SameDayBookingHandler:
-    """當日預訂處理器"""
+    """
+    當日預訂處理器
     
-    # 對話狀態常量
-    STATE_IDLE = 'idle'                     # 初始狀態
-    STATE_ASK_DATE = 'ask_date'             # 詢問入住日期
-    STATE_SHOW_ROOMS = 'show_rooms'         # 顯示可用房型
-    STATE_COLLECT_ROOM = 'collect_room'     # 收集房型選擇
-    STATE_COLLECT_COUNT = 'collect_count'   # 收集房間數量
-    STATE_COLLECT_BED = 'collect_bed'       # 收集床型
-    STATE_MULTI_BED_SELECT = 'multi_bed_select'  # 多房型逐一選擇床型
-    STATE_COLLECT_REQUESTS = 'collect_requests'  # 收集特殊需求
-    STATE_COLLECT_INFO = 'collect_info'     # 收集客人資訊
-    STATE_CONFIRM = 'confirm'               # 確認預訂
-    STATE_COMPLETE = 'complete'             # 完成
-    STATE_CANCEL_CONFIRM = 'cancel_confirm' # 確認取消訂單
+    注意：狀態管理已遷移至 ConversationStateMachine
+    """
     
     # 房型對照表（固定顯示的房型，使用 2/3/4 作為編號）
     AVAILABLE_ROOMS = [
@@ -61,30 +51,34 @@ class SameDayBookingHandler:
         'AQ': '無障礙四人房'
     }
     
-    def __init__(self, pms_client):
+    def __init__(self, pms_client, state_machine):
         """
         初始化處理器
         
         Args:
             pms_client: PMSClient 實例
+            state_machine: 統一對話狀態機
         """
         self.pms_client = pms_client
-        self.user_sessions = {}  # 用戶對話狀態 {user_id: session_data}
+        self.state_machine = state_machine  # 注入狀態機
+        self.user_sessions = {}  # 暫時保留，用於業務資料
     
     def get_session(self, user_id: str) -> Dict[str, Any]:
         """取得或建立用戶對話 session"""
         if user_id not in self.user_sessions:
             self.user_sessions[user_id] = {
-                'state': self.STATE_IDLE,
+                'state': 'idle',  # 使用字串常量而非 self.STATE_IDLE
                 'available_rooms': [],
                 'selected_room': None,
-                'room_count': 1,
+                'room_count': 0,
                 'bed_type': None,
+                'special_requests': None,
                 'guest_name': None,
-                'phone': None,
-                'arrival_time': None,
                 'line_display_name': None,
-                'needs_upgrade': False,
+                'guest_phone': None,
+                'arrival_time': None,
+                'multi_room_orders': [],
+                'is_multi_room': False,
                 'created_at': datetime.now().isoformat()
             }
         return self.user_sessions[user_id]
@@ -334,6 +328,11 @@ class SameDayBookingHandler:
             return any(kw in arrival_time for kw in vague_only_keywords)
         
         return False
+
+    def _is_query_intent(self, message: str) -> bool:
+        """偵測查詢意圖"""
+        keywords = ['查訂單', '查詢訂單', '我有訂房', '確認訂單', '我的訂單', '我訂了', '已經訂']
+        return any(kw in message for kw in keywords)
     
     def handle_message(self, user_id: str, message: str, display_name: str = None) -> Optional[str]:
         """
@@ -353,8 +352,13 @@ class SameDayBookingHandler:
         if display_name:
             session['line_display_name'] = display_name
         
-        # 狀態機處理
+        # 偵測「跨流程」意圖 (例如在預訂中要查現有訂單)
         state = session['state']
+        if state != self.STATE_IDLE and self._is_query_intent(message):
+            session['pending_intent'] = 'query'
+            return "好的，了解您想查詢現有訂單。為了確保您的預訂完整，請先讓我幫您完成這筆當日預訂的登記，稍後立刻為您查詢唷！"
+
+        # 狀態機處理
         
         if state == self.STATE_IDLE:
             # 檢查是否為取消訂單意圖
@@ -368,7 +372,7 @@ class SameDayBookingHandler:
                     return self._start_booking(user_id, session)
                 else:
                     # 詢問入住日期
-                    session['state'] = self.STATE_ASK_DATE
+                    self.state_machine.transition(user_id, self.state_machine.STATE_BOOKING_ASK_DATE)
                     return """請問您想預訂哪一天入住？
 
 您可以回覆：
@@ -549,7 +553,7 @@ class SameDayBookingHandler:
             for room in result.get('data', {}).get('available_room_types', []):
                 api_prices[room.get('room_type_code')] = room.get('price', 0)
         
-        session['state'] = self.STATE_SHOW_ROOMS
+        self.state_machine.transition(user_id, self.state_machine.STATE_BOOKING_SHOW_ROOMS)
         
         # 顯示房型列表（使用 API 價格）
         room_list = []
@@ -594,7 +598,7 @@ class SameDayBookingHandler:
             # 保存多房型選擇
             session['multi_room_orders'] = multi_room_result
             session['is_multi_room'] = True
-            session['state'] = self.STATE_COLLECT_INFO
+            self.state_machine.transition(user_id, self.state_machine.STATE_BOOKING_COLLECT_NAME)
             
             # 直接進入收集資訊階段
             return self._check_multi_room_availability(user_id, session)
@@ -621,7 +625,7 @@ class SameDayBookingHandler:
         # 單一房型：保存選擇
         session['selected_room'] = selected_room
         session['is_multi_room'] = False
-        session['state'] = self.STATE_COLLECT_COUNT
+        self.state_machine.transition(user_id, self.state_machine.STATE_BOOKING_COLLECT_COUNT)
         
         return f"""好的，您選擇了：{selected_room['name']}
 
@@ -748,7 +752,7 @@ class SameDayBookingHandler:
         # 初始化床型選擇進度
         session['multi_bed_index'] = 0  # 當前要選擇床型的房型索引
         session['multi_bed_types'] = {}  # 儲存每個房型的床型選擇 {idx: bed_type}
-        session['state'] = self.STATE_MULTI_BED_SELECT
+        self.state_machine.transition(user_id, self.state_machine.STATE_BOOKING_COLLECT_BED)
         
         room_list = "\n".join(order_lines)
         
@@ -799,7 +803,7 @@ class SameDayBookingHandler:
         # 檢查該房型是否有床型選項
         selected_room = session['selected_room']
         if len(selected_room.get('beds', [])) > 1:
-            session['state'] = self.STATE_COLLECT_BED
+            self.state_machine.transition(user_id, self.state_machine.STATE_BOOKING_COLLECT_BED)
             bed_list = '\n'.join([f"{i+1}. {bed}" for i, bed in enumerate(selected_room['beds'])])
             return f"""請選擇床型：
 
@@ -810,7 +814,7 @@ class SameDayBookingHandler:
             # 只有一種床型，直接進入下一步
             if selected_room.get('beds'):
                 session['bed_type'] = selected_room['beds'][0]
-            session['state'] = self.STATE_COLLECT_INFO
+            self.state_machine.transition(user_id, self.state_machine.STATE_BOOKING_COLLECT_NAME)
             return self._check_availability_and_proceed(user_id, session)
     
     def _handle_bed_selection(self, user_id: str, session: Dict, message: str) -> str:
@@ -824,7 +828,7 @@ class SameDayBookingHandler:
             idx = int(message_clean) - 1
             if 0 <= idx < len(beds):
                 session['bed_type'] = beds[idx]
-                session['state'] = self.STATE_COLLECT_INFO
+                self.state_machine.transition(user_id, self.state_machine.STATE_BOOKING_COLLECT_NAME)
                 return self._check_availability_and_proceed(user_id, session)
         
         bed_list = '\n'.join([f"{i+1}. {bed}" for i, bed in enumerate(beds)])
@@ -877,7 +881,7 @@ class SameDayBookingHandler:
                 accessible_notice = "\n\n⚠️ 目前僅剩無障礙房型，此房型只有淋浴間為無障礙設計，其餘房內設施與一般房間相同。"
             
             # 進入特殊需求詢問狀態
-            session['state'] = self.STATE_COLLECT_REQUESTS
+            self.state_machine.transition(user_id, self.state_machine.STATE_BOOKING_COLLECT_REQUESTS)
             
             return f"""好的，已確認：
 🏨 {selected_room['name']}{bed_info} x {room_count} 間{accessible_notice}
@@ -907,7 +911,7 @@ class SameDayBookingHandler:
         
         if current_idx >= len(orders):
             # 所有床型已選擇完成，進入收集資訊階段
-            session['state'] = self.STATE_COLLECT_INFO
+            self.state_machine.transition(user_id, self.state_machine.STATE_BOOKING_COLLECT_NAME)
             return """所有床型已選擇完成！
 
 請提供以下資訊以完成預訂：
@@ -958,7 +962,7 @@ class SameDayBookingHandler:
         
         if next_idx >= len(orders):
             # 所有床型已選擇完成，進入特殊需求詢問
-            session['state'] = self.STATE_COLLECT_REQUESTS
+            self.state_machine.transition(user_id, self.state_machine.STATE_BOOKING_COLLECT_REQUESTS)
             
             # 顯示選擇結果摘要
             summary_lines = []
@@ -1006,7 +1010,7 @@ class SameDayBookingHandler:
         if has_no_request:
             # 沒有特殊需求
             session['special_requests'] = None
-            session['state'] = self.STATE_COLLECT_INFO
+            self.state_machine.transition(user_id, self.state_machine.STATE_BOOKING_COLLECT_NAME)
             return """好的，沒有特殊需求！
 
 請提供以下資訊以完成預訂：
@@ -1018,7 +1022,7 @@ class SameDayBookingHandler:
         
         # 有特殊需求，儲存需求內容
         session['special_requests'] = message_clean
-        session['state'] = self.STATE_COLLECT_INFO
+        self.state_machine.transition(user_id, self.state_machine.STATE_BOOKING_COLLECT_NAME)
         
         return f"""✅ 已記錄您的特殊需求：{message_clean}
 
@@ -1142,7 +1146,7 @@ class SameDayBookingHandler:
                 return f"您說{arrival_time}，請問大約是幾點呢？（例如：3點、下午5點）"
         
         # 資訊完整，進入確認階段
-        session['state'] = self.STATE_CONFIRM
+        self.state_machine.transition(user_id, self.state_machine.STATE_BOOKING_CONFIRM)
         
         today = datetime.now().strftime('%Y-%m-%d')
         
@@ -1261,9 +1265,10 @@ class SameDayBookingHandler:
             check_out=tomorrow
         )
         
+        pending_intent = session.get('pending_intent')
         self.clear_session(user_id)
         
-        return f"""✅ 預訂成功！
+        response = f"""✅ 預訂成功！
 
 📋 預訂資訊：
 ━━━━━━━━━━━━━━━
@@ -1282,6 +1287,11 @@ class SameDayBookingHandler:
 • 如有更變需取消預訂，務必 LINE 告之
 
 期待您的光臨！🌊"""
+
+        if pending_intent == 'query':
+            response += "\n\n━━━━━━━━━━━━━━━\n🔔 您剛剛提到的「查詢現有訂單」，現在立刻為您處理！\n\n請問您的訂單編號是多少呢？"
+
+        return response
     
     def _create_multi_room_booking(self, user_id: str, session: Dict, today: str, tomorrow: str) -> str:
         """建立多房型預訂"""
@@ -1342,11 +1352,12 @@ class SameDayBookingHandler:
             self.clear_session(user_id)
             return """抱歉，預訂失敗，請稍後再試。"""
         
+        pending_intent = session.get('pending_intent')
         self.clear_session(user_id)
         
         total_price = session.get('total_price', 0)
         
-        return f"""✅ 預訂成功！
+        response = f"""✅ 預訂成功！
 
 📋 預訂資訊：
 ━━━━━━━━━━━━━━━
@@ -1367,6 +1378,11 @@ class SameDayBookingHandler:
 • 如有更變需取消預訂，務必 LINE 告之
 
 期待您的光臨！🌊"""
+
+        if pending_intent == 'query':
+            response += "\n\n━━━━━━━━━━━━━━━\n🔔 您剛剛提到的「查詢現有訂單」，現在立刻為您處理！\n\n請問您的訂單編號是多少呢？"
+
+        return response
     
     def _save_to_guest_orders(self, order_id: str, user_id: str, session: Dict, 
                                room: Dict, check_in: str, check_out: str):
@@ -1465,7 +1481,7 @@ class SameDayBookingHandler:
         # 取第一筆（通常只會有一筆）
         booking = user_bookings[0]
         session['cancel_booking'] = booking
-        session['state'] = self.STATE_CANCEL_CONFIRM
+        self.state_machine.transition(user_id, self.state_machine.STATE_IDLE)
         
         room_name = booking.get('room_type_name', booking.get('room_type_code', '未知'))
         bed_info = f" - {booking.get('bed_type')}" if booking.get('bed_type') else ""

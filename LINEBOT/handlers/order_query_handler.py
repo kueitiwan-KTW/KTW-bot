@@ -20,18 +20,11 @@ class OrderQueryHandler(BaseHandler):
     3. 確認訂單資訊
     4. 收集客人資料（電話、抵達時間、特殊需求）
     5. 寫入 guest_orders.json
+    
+    注意：狀態管理已遷移至 ConversationStateMachine
     """
     
-    # 狀態常量
-    STATE_IDLE = 'idle'                          # 初始狀態
-    STATE_QUERYING = 'querying'                  # 正在查詢
-    STATE_CONFIRMING_ORDER = 'confirming_order'  # 確認訂單是否正確
-    STATE_COLLECTING_PHONE = 'collecting_phone'  # 收集電話
-    STATE_COLLECTING_ARRIVAL = 'collecting_arrival'  # 收集抵達時間
-    STATE_COLLECTING_SPECIAL = 'collecting_special'  # 收集特殊需求
-    STATE_COMPLETED = 'completed'                # 完成
-    
-    def __init__(self, pms_client, gmail_helper, logger):
+    def __init__(self, pms_client, gmail_helper, logger, state_machine):
         """
         初始化處理器
         
@@ -39,67 +32,116 @@ class OrderQueryHandler(BaseHandler):
             pms_client: PMS API 客戶端
             gmail_helper: Gmail 查詢助手
             logger: 對話記錄器
+            state_machine: 統一對話狀態機
         """
         super().__init__()
         self.pms_client = pms_client
         self.gmail_helper = gmail_helper
         self.logger = logger
+        self.state_machine = state_machine  # 新增：注入狀態機
+        
+        # 房型對照表
+        self.room_types = {
+            'SD': '標準雙人房',
+            'ST': '標準三人房',
+            'SQ': '標準四人房',
+            'CD': '經典雙人房',
+            'CQ': '經典四人房',
+            'ED': '行政雙人房',
+            'DD': '豪華雙人房',
+            'WD': '海景雙人房',
+            'WQ': '海景四人房',
+            'FM': '親子家庭房',
+            'VD': 'VIP 雙人房',
+            'VQ': 'VIP 四人房',
+            'AD': '無障礙雙人房',
+            'AQ': '無障礙四人房',
+        }
     
     def is_active(self, user_id: str) -> bool:
         """檢查用戶是否在訂單查詢流程中"""
-        session = self.user_sessions.get(user_id)
-        if not session:
-            return False
-        return session.get('state', self.STATE_IDLE) != self.STATE_IDLE
+        state = self.state_machine.get_state(user_id)
+        return state.startswith('order_query')
     
     def is_completed(self, user_id: str) -> bool:
         """檢查是否完成流程"""
-        session = self.user_sessions.get(user_id)
-        if not session:
-            return False
-        return session.get('state') == self.STATE_COMPLETED
+        state = self.state_machine.get_state(user_id)
+        return state == self.state_machine.STATE_ORDER_QUERY_COMPLETED
     
-    def _create_default_session(self) -> Dict[str, Any]:
-        """建立預設 session"""
-        return {
-            'state': self.STATE_IDLE,
-            'order_id': None,
-            'order_data': None,
-            'phone': None,
-            'arrival_time': None,
-            'special_requests': [],
-            'created_at': datetime.now().isoformat()
-        }
     
     def handle_message(self, user_id: str, message: str, display_name: str = None) -> Optional[str]:
         """處理訊息"""
         session = self.get_session(user_id)
-        state = session['state']
+        state = self.state_machine.get_state(user_id)
         
         # 儲存 display_name
         if display_name:
             session['display_name'] = display_name
+            print(f"📝 已儲存 display_name: {display_name}")
         
-        if state == self.STATE_IDLE:
+        # 偵測「跨流程」意圖 (例如在查詢中要加訂)
+        if state != 'idle' and self._is_booking_intent(message):
+            self.state_machine.set_pending_intent(user_id, 'same_day_booking', message)
+            return "好的，了解您有加訂需求。為了確保權益，請先讓我幫您核對完這筆現有訂單的資訊，稍後立刻為您辦理加訂手續唷！"
+
+        if state == 'idle':
             # 提取訂單編號並查詢
             order_id = self._extract_order_number(message)
             if order_id:
                 return self._query_order(user_id, order_id)
             return None
         
-        elif state == self.STATE_CONFIRMING_ORDER:
+        elif state == self.state_machine.STATE_ORDER_QUERY_CONFIRMING:
             return self._handle_order_confirmation(user_id, message)
         
-        elif state == self.STATE_COLLECTING_PHONE:
+        elif state == self.state_machine.STATE_ORDER_QUERY_COLLECTING_PHONE:
             return self._handle_phone_collection(user_id, message)
         
-        elif state == self.STATE_COLLECTING_ARRIVAL:
+        elif state == self.state_machine.STATE_ORDER_QUERY_COLLECTING_ARRIVAL:
             return self._handle_arrival_collection(user_id, message)
         
-        elif state == self.STATE_COLLECTING_SPECIAL:
+        elif state == self.state_machine.STATE_ORDER_QUERY_COLLECTING_SPECIAL:
             return self._handle_special_requests(user_id, message)
         
         return None
+
+    def _normalize_phone(self, phone: str) -> str:
+        """
+        標準化電話號碼
+        - 移除國際電話前綴 886（包含多次重複）
+        - 找到並提取台灣手機格式 09xxxxxxxx
+        """
+        if not phone:
+            return '未提供'
+        
+        # 移除空白、連字符、加號
+        clean = phone.replace(' ', '').replace('-', '').replace('+', '')
+        
+        # 策略 1：尋找 09 開頭的 10 位數字
+        import re
+        match = re.search(r'(09\d{8})', clean)
+        if match:
+            return match.group(1)  # 直接返回找到的台灣手機號碼
+        
+        # 策略 2：持續移除 886 前綴直到不再以 886 開頭
+        while clean.startswith('886'):
+            clean = clean[3:]
+        
+        # 如果移除後以 0 開頭且長度正確，直接返回
+        if clean.startswith('0') and len(clean) >= 10:
+            return clean[:10]
+        
+        # 如果以 9 開頭（缺少 0），補上 0
+        if clean.startswith('9') and len(clean) >= 9:
+            return '0' + clean[:9]
+        
+        # 其他情況，返回清理後的結果
+        return clean if clean else '未提供'
+
+    def _is_booking_intent(self, message: str) -> bool:
+        """偵測加訂意圖"""
+        keywords = ['加訂', '加定', '多訂', '再訂', '多一間', '再一間']
+        return any(kw in message for kw in keywords)
     
     def _extract_order_number(self, message: str) -> Optional[str]:
         """從訊息中提取訂單編號"""
@@ -109,8 +151,8 @@ class OrderQueryHandler(BaseHandler):
         # 移除可能的前綴 (RMAG, RMPGP 等)
         clean_message = re.sub(r'^[A-Z]+', '', clean_message)
         
-        # 找 5 位數以上的數字
-        match = re.search(r'\b(\d{5,})\b', clean_message)
+        # 找 5 位數以上的數字 (移除 \b 以便在中文環境中更好匹配)
+        match = re.search(r'(\d{5,})', clean_message)
         if match:
             return match.group(1)
         return None
@@ -119,7 +161,7 @@ class OrderQueryHandler(BaseHandler):
         """查詢訂單"""
         session = self.get_session(user_id)
         session['order_id'] = order_id
-        session['state'] = self.STATE_QUERYING
+        self.state_machine.transition(user_id, self.state_machine.STATE_ORDER_QUERY_CONFIRMING, {'order_id': order_id})
         
         # 1. 嘗試 PMS API
         result = self._query_pms(order_id)
@@ -130,7 +172,7 @@ class OrderQueryHandler(BaseHandler):
         
         if result:
             session['order_data'] = result
-            session['state'] = self.STATE_CONFIRMING_ORDER
+            self.state_machine.set_data(user_id, 'order_data', result)
             
             # 格式化訂單資訊
             details = self._format_order_details(result)
@@ -152,7 +194,54 @@ class OrderQueryHandler(BaseHandler):
         try:
             result = self.pms_client.get_booking_details(order_id)
             if result and result.get('success'):
-                return result.get('data')
+                # 標準化鍵名：將 PMS 的大寫鍵轉換為處理器使用的格式
+                data = result.get('data', {})
+                
+                # 獲取 OTA 訂單編號（優先使用）
+                ota_id = data.get('ota_booking_id') or ''
+                pms_id = str(data.get('booking_id') or data.get('BOOKING_ID') or order_id)
+                
+                # 處理房型：從 rooms 陣列提取房型代碼並轉換，相同房型合併統計
+                rooms = data.get('rooms', [])
+                room_count_dict = {}  # 用字典統計：{房型中文名: 總數量}
+                
+                for room in rooms:
+                    room_code = (room.get('room_type_code') or room.get('ROOM_TYPE_CODE') or '').strip()
+                    room_count = room.get('room_count') or room.get('ROOM_COUNT') or 1
+                    room_name_zh = self.room_types.get(room_code, room_code)
+                    
+                    # 累加相同房型的數量
+                    if room_name_zh in room_count_dict:
+                        room_count_dict[room_name_zh] += room_count
+                    else:
+                        room_count_dict[room_name_zh] = room_count
+                
+                # 格式化為「房型 x數量」列表
+                room_types_zh = [f"{name} x{count}" for name, count in room_count_dict.items()]
+                
+                # 組合姓名：優先使用 Last Name + First Name
+                last_name = (data.get('guest_last_name') or data.get('GUEST_LAST_NAME') or '').strip()
+                first_name = (data.get('guest_first_name') or data.get('GUEST_FIRST_NAME') or '').strip()
+                
+                if last_name and first_name:
+                    guest_name = f"{last_name}{first_name}"
+                else:
+                    guest_name = data.get('guest_name') or data.get('GUEST_NAME')
+                
+                # 兼容性轉換
+                return {
+                    'order_id': pms_id,  # 內部 ID
+                    'ota_booking_id': ota_id,  # OTA 外部編號
+                    'guest_name': guest_name,
+                    'check_in': data.get('check_in_date') or data.get('CHECK_IN_DATE'),
+                    'check_out': data.get('check_out_date') or data.get('CHECK_OUT_DATE'),
+                    'nights': data.get('nights') or data.get('NIGHTS') or 1,  # 晚數
+                    'phone': self._normalize_phone(data.get('phone') or data.get('PHONE') or data.get('contact_phone') or ''),
+                    'room_type': ', '.join(room_types_zh) if room_types_zh else '未知',
+                    'remarks': data.get('remarks') or data.get('REMARKS') or '',  # 備註（用於判斷早餐）
+                    'booking_source': data.get('booking_source') or data.get('BOOKING_SOURCE'),
+                    'source': 'pms'
+                }
         except Exception as e:
             print(f"❌ PMS API 查詢失敗: {e}")
         return None
@@ -191,30 +280,73 @@ class OrderQueryHandler(BaseHandler):
         }
     
     def _format_order_details(self, order_data: Dict) -> str:
-        """格式化訂單資訊"""
+        """格式化訂單資訊（複用 bot.py 邏輯）"""
+        
+        # 檢查訂單狀態：如果已取消，返回簡化訊息
+        status_code = order_data.get('status_code', '').strip()
+        status_name = order_data.get('status_name', '')
+        
+        if status_code == 'D' or '取消' in status_name:
+            return """⚠️ 訂單狀態：已取消
+
+此訂單已經取消，無法辦理入住。
+如有疑問，請聯繫櫃檯：(03) 832-5700"""
+        
+        # 正常訂單處理
         lines = []
         
-        if order_data.get('order_id'):
-            lines.append(f"📌 訂單編號: {order_data['order_id']}")
+        # OTA 訂單號（優先顯示）
+        ota_id = order_data.get('ota_booking_id', '')
+        pms_id = order_data.get('order_id', '未知')
+        display_id = ota_id if ota_id else pms_id
         
+        # 訂房來源（從 OTA ID 前綴判斷）
+        booking_source = "未知"
+        remarks = order_data.get('remarks', '')
+        
+        # 優先檢查 remarks 中的關鍵字
+        if '官網' in remarks or '網路訂房' in remarks or '線上訂購' in remarks:
+            booking_source = "官網"
+        elif 'agoda' in remarks.lower():
+            booking_source = "Agoda"
+        elif 'booking.com' in remarks.lower() or 'booking' in remarks.lower():
+            booking_source = "Booking"
+        # 如果 remarks 沒有，才用 OTA ID 判斷
+        elif ota_id:
+            if ota_id.startswith('RMAG'):
+                booking_source = "Agoda"
+            elif ota_id.startswith('RMPGP'):
+                booking_source = "官網"
+            elif ota_id.startswith('RMBK'):
+                booking_source = "Booking.com"
+        
+        lines.append(f"訂單來源: {booking_source}")
+        lines.append(f"預約編號: {display_id}")
+        
+        # 訂房人姓名
         if order_data.get('guest_name'):
-            lines.append(f"👤 訂房人姓名: {order_data['guest_name']}")
+            lines.append(f"訂房人姓名: {order_data['guest_name']}")
         
+        # 聯絡電話
+        phone = order_data.get('phone') or order_data.get('contact_phone') or '未提供'
+        lines.append(f"聯絡電話: {phone}")
+        
+        # 日期與晚數
         if order_data.get('check_in'):
-            check_in = order_data['check_in']
-            check_out = order_data.get('check_out', '')
-            lines.append(f"📅 入住日期: {check_in}")
-            if check_out:
-                lines.append(f"📅 退房日期: {check_out}")
+            lines.append(f"入住日期: {order_data['check_in']}")
+            if order_data.get('check_out'):
+                nights = order_data.get('nights', 1)
+                lines.append(f"退房日期: {order_data['check_out']} (共 {nights} 晚)")
         
-        if order_data.get('room_type'):
-            lines.append(f"🏨 房型: {order_data['room_type']}")
+        # 房型（已經在 _query_pms 轉換為中文）
+        room_type = order_data.get('room_type', '未知')
+        lines.append(f"房型: {room_type}")
         
-        if order_data.get('room_count'):
-            lines.append(f"🔢 數量: {order_data['room_count']} 間")
-        
-        if order_data.get('booking_source'):
-            lines.append(f"📱 訂房來源: {order_data['booking_source']}")
+        # 早餐（從 remarks 判斷）
+        breakfast = "含早餐"
+        if '不含早' in remarks or '無早' in remarks:
+            breakfast = "不含早餐"
+        lines.append(f"早餐: {breakfast}")
         
         return '\n'.join(lines)
     
@@ -244,21 +376,21 @@ class OrderQueryHandler(BaseHandler):
         return "請問是這筆訂單嗎？請回覆「是」或「不是」。"
     
     def _start_collecting_info(self, user_id: str) -> str:
-        """開始收集客人資訊"""
+        """開始收集客人資訊 (強制電話確認)"""
         session = self.get_session(user_id)
         order_data = session.get('order_data', {})
         
         # 檢查訂單中是否已有電話
         existing_phone = order_data.get('phone') or order_data.get('contact_phone')
         
+        self.state_machine.transition(user_id, self.state_machine.STATE_ORDER_QUERY_COLLECTING_PHONE)
+        
         if existing_phone:
             session['phone'] = existing_phone
-            session['state'] = self.STATE_COLLECTING_ARRIVAL
             return f"""好的！系統顯示您的聯絡電話為 {existing_phone}。
 
-請問您預計幾點抵達呢？（例如：下午3點、晚上7點）"""
+請問這是否為您的正確聯絡電話？如果您想更換，請直接輸入新的電話號碼。"""
         else:
-            session['state'] = self.STATE_COLLECTING_PHONE
             return """好的！系統顯示您的訂單缺少聯絡電話。
 
 請問方便提供您的聯絡電話嗎？"""
@@ -272,7 +404,7 @@ class OrderQueryHandler(BaseHandler):
         
         if phone:
             session['phone'] = phone
-            session['state'] = self.STATE_COLLECTING_ARRIVAL
+            self.state_machine.transition(user_id, self.state_machine.STATE_ORDER_QUERY_COLLECTING_ARRIVAL, {'phone': phone})
             
             # 儲存到資料庫
             self._save_guest_info(user_id, 'phone', phone)
@@ -297,7 +429,7 @@ class OrderQueryHandler(BaseHandler):
 
 為了更準確安排，請問大約是幾點呢？（例如：下午2點、3點左右）"""
         
-        session['state'] = self.STATE_COLLECTING_SPECIAL
+        self.state_machine.transition(user_id, self.state_machine.STATE_ORDER_QUERY_COLLECTING_SPECIAL, {'arrival_time': message})
         return """好的，已記錄您的抵達時間！
 
 請問有什麼特殊需求嗎？（例如：嬰兒床、消毒鍋、嬰兒澡盆、高樓層、禁菸房等）
@@ -315,6 +447,8 @@ class OrderQueryHandler(BaseHandler):
             return self._complete_collection(user_id)
         
         # 有特殊需求，儲存
+        if 'special_requests' not in session:
+            session['special_requests'] = []
         session['special_requests'].append(message)
         self._save_guest_info(user_id, 'special_need', message)
         
@@ -323,9 +457,9 @@ class OrderQueryHandler(BaseHandler):
 還有其他需求嗎？如果沒有，請回覆「沒有」。"""
     
     def _complete_collection(self, user_id: str) -> str:
-        """完成資料收集"""
+        """完成資料收集 (帶有延遲跳轉處理)"""
         session = self.get_session(user_id)
-        session['state'] = self.STATE_COMPLETED
+        self.state_machine.transition(user_id, self.state_machine.STATE_ORDER_QUERY_COMPLETED)
         
         # 儲存到 guest_orders.json
         self._save_to_guest_orders(user_id, session)
@@ -357,6 +491,15 @@ class OrderQueryHandler(BaseHandler):
 為了讓您的入住流程更順暢，請於抵達當日先至櫃檯辦理入住登記，之後我們的櫃檯人員將會協助引導您前往停車位置 🅿️
 
 感謝您的配合，我們期待為您提供舒適的入住體驗。"""
+
+        # 這裡處理延遲跳轉引導
+        pending_intent = self.state_machine.get_pending_intent(user_id)
+        if pending_intent == 'same_day_booking':
+            # 執行跳轉
+            next_state = self.state_machine.execute_pending_intent(user_id)
+            if next_state:
+                self.state_machine.transition(user_id, next_state)
+                response += "\n\n━━━━━━━━━━━━━━━\n🔔 您剛剛提到的「加訂需求」，現在立刻為您處理！\n\n請問您今天想再加訂什麼房型呢？"
         
         # 清除 session（但保留訂單資訊供後續使用）
         self.clear_session(user_id)
@@ -399,11 +542,10 @@ class OrderQueryHandler(BaseHandler):
         
         if order_id and self.logger:
             try:
-                self.logger.update_order_info(
+                self.logger.update_guest_request(
                     order_id=order_id,
-                    info_type=info_type,
-                    content=content,
-                    line_user_id=user_id
+                    request_type=info_type,
+                    content=content
                 )
                 print(f"✅ 已儲存 {info_type}: {content}")
             except Exception as e:
@@ -437,10 +579,21 @@ class OrderQueryHandler(BaseHandler):
                 'updated_at': datetime.now().isoformat()
             }
             
-            self.logger.save_order(order_id, full_order)
-            print(f"✅ 已儲存訂單 {order_id} 到 guest_orders.json")
+            self.logger.save_order(full_order)
+            print(f"✅ 已儲存訂單 {order_id} 到 guest_orders.json, display_name={session.get('display_name')}")
+            
+            # 同步到後端 SQLite 擴充資料庫
+            if self.pms_client:
+                sync_data = {
+                    'confirmed_phone': session.get('phone'),
+                    'arrival_time': session.get('arrival_time'),
+                    'ai_extracted_requests': "; ".join(session.get('special_requests', [])) if session.get('special_requests') else None,
+                    'line_name': session.get('display_name')
+                }
+                self.pms_client.update_supplement(order_id, sync_data)
+                
         except Exception as e:
-            print(f"❌ 儲存訂單失敗: {e}")
+            print(f"❌ 儲存或同步訂單失敗: {e}")
     
     # ============================================
     # 輔助方法 - 從郵件提取資訊
@@ -486,7 +639,7 @@ class OrderQueryHandler(BaseHandler):
         if 'agoda' in text:
             return 'Agoda'
         elif 'booking.com' in text:
-            return 'Booking.com'
+            return 'Booking'
         elif 'expedia' in text:
             return 'Expedia'
         elif 'hotels.com' in text:
@@ -500,6 +653,6 @@ class OrderQueryHandler(BaseHandler):
         if 'rmag' in text:
             return 'Agoda'
         elif 'rmpgp' in text:
-            return 'Booking.com'
+            return 'Booking'
         
         return '其他'

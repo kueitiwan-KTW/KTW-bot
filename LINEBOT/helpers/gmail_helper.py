@@ -13,6 +13,20 @@ class GmailHelper:
         """
         print(f"Searching for Order ID: {order_id}")
         
+        # --- 隱私攔截碼 (Privacy Guard) ---
+        # 1. 攔截日期格式 (如 12/18, 2025-12-18)
+        import re
+        if re.search(r'\d{1,2}/\d{1,2}', order_id) or re.search(r'\d{4}-\d{2}-\d{2}', order_id):
+            print(f"❌ Privacy Block: Detected date format in search query '{order_id}'. Search aborted.")
+            return None
+            
+        # 2. 攔截過短或無效的純數字 (防止廣泛匹配)
+        clean_numeric = re.sub(r'\D', '', order_id)
+        if not clean_numeric or len(clean_numeric) < 5:
+            print(f"❌ Privacy Block: Search query '{order_id}' is too vague. Search aborted.")
+            return None
+        # -------------------------------
+        
         # 1. Primary Strategy: Direct API Search (Fast, requires word match)
         # If order_id has a prefix (e.g., RMAG1675664593), also search for the numeric part
         import re
@@ -29,10 +43,11 @@ class GmailHelper:
             messages = results.get('messages', [])
             
             # If explicit search fails, and ID is short (likely a substring), try Deep Scan
+            # 限定最近 14 天的訂單郵件，避免掃描到過舊的歷史資料
             if not messages and len(order_id) >= 5:
                 print(f"⚠️ Direct search failed. Initiating Deep Scan for substring match: {order_id}")
-                # Search for generic order keywords to get a candidate pool
-                pool_query = 'subject:(訂單 OR Order OR Booking OR Reservation)'
+                # Search for generic order keywords to get a candidate pool (within last 14 days)
+                pool_query = 'subject:(訂單 OR Order OR Booking OR Reservation) newer_than:14d'
                 pool_results = self.service.users().messages().list(userId='me', q=pool_query, maxResults=50).execute()
                 pool_messages = pool_results.get('messages', [])
                 

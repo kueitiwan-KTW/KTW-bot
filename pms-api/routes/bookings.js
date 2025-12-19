@@ -728,8 +728,9 @@ router.get('/:booking_id', async (req, res) => {
         const connection = await pool.getConnection();
 
         try {
-            // 查詢訂單主檔
-            const orderResult = await connection.execute(
+            // 查詢訂單主檔 - 三層查詢策略
+            // 1. 先用 IKEY 精確匹配
+            let orderResult = await connection.execute(
                 `SELECT 
            TRIM(om.IKEY) as booking_id,
            CASE 
@@ -743,11 +744,64 @@ router.get('/:booking_id', async (req, res) => {
            TO_CHAR(om.CO_DAT, 'YYYY-MM-DD') as check_out_date,
            om.DAYS as nights,
            om.ORDER_STA as status_code,
-           om.ORDER_RMK as remarks
+           om.ORDER_RMK as remarks,
+           om.ORDER_DEPOSIT as deposit_paid,
+           TRIM(om.RVRESERVE_NOS) as ota_booking_id
          FROM GDWUUKT.ORDER_MN om
          WHERE TRIM(om.IKEY) = :booking_id`,
                 { booking_id }
             );
+
+            // 2. 若失敗，用 RVRESERVE_NOS (OTA訂單號) 精確匹配
+            if (orderResult.rows.length === 0) {
+                orderResult = await connection.execute(
+                    `SELECT 
+               TRIM(om.IKEY) as booking_id,
+               CASE 
+                 WHEN LENGTH(TRIM(om.GALT_NAM)) > 0 THEN TRIM(om.GALT_NAM)
+                 WHEN LENGTH(TRIM(om.GLAST_NAM)) > 0 OR LENGTH(TRIM(om.GFIRST_NAM)) > 0 
+                   THEN TRIM(NVL(om.GLAST_NAM,'') || NVL(om.GFIRST_NAM,''))
+                 ELSE om.CUST_NAM
+               END as guest_name,
+               om.CONTACT1_RMK as contact_phone,
+               TO_CHAR(om.CI_DAT, 'YYYY-MM-DD') as check_in_date,
+               TO_CHAR(om.CO_DAT, 'YYYY-MM-DD') as check_out_date,
+               om.DAYS as nights,
+               om.ORDER_STA as status_code,
+               om.ORDER_RMK as remarks,
+               om.ORDER_DEPOSIT as deposit_paid,
+               TRIM(om.RVRESERVE_NOS) as ota_booking_id
+             FROM GDWUUKT.ORDER_MN om
+             WHERE TRIM(om.RVRESERVE_NOS) = :booking_id`,
+                    { booking_id }
+                );
+            }
+
+            // 3. 若仍失敗，嘗試模糊匹配（支援只用後面數字查詢）
+            if (orderResult.rows.length === 0) {
+                orderResult = await connection.execute(
+                    `SELECT 
+               TRIM(om.IKEY) as booking_id,
+               CASE 
+                 WHEN LENGTH(TRIM(om.GALT_NAM)) > 0 THEN TRIM(om.GALT_NAM)
+                 WHEN LENGTH(TRIM(om.GLAST_NAM)) > 0 OR LENGTH(TRIM(om.GFIRST_NAM)) > 0 
+                   THEN TRIM(NVL(om.GLAST_NAM,'') || NVL(om.GFIRST_NAM,''))
+                 ELSE om.CUST_NAM
+               END as guest_name,
+               om.CONTACT1_RMK as contact_phone,
+               TO_CHAR(om.CI_DAT, 'YYYY-MM-DD') as check_in_date,
+               TO_CHAR(om.CO_DAT, 'YYYY-MM-DD') as check_out_date,
+               om.DAYS as nights,
+               om.ORDER_STA as status_code,
+               om.ORDER_RMK as remarks,
+               om.ORDER_DEPOSIT as deposit_paid,
+               TRIM(om.RVRESERVE_NOS) as ota_booking_id
+             FROM GDWUUKT.ORDER_MN om
+             WHERE TRIM(om.IKEY) LIKE '%' || :booking_id || '%'
+                OR TRIM(om.RVRESERVE_NOS) LIKE '%' || :booking_id || '%'`,
+                    { booking_id }
+                );
+            }
 
             if (orderResult.rows.length === 0) {
                 return res.status(404).json({
@@ -761,6 +815,9 @@ router.get('/:booking_id', async (req, res) => {
 
             const order = orderResult.rows[0];
 
+            // 使用實際的 booking_id (IKEY) 查詢訂單明細
+            const actual_booking_id = order[0]; // 使用返回的 IKEY，而非用戶輸入的編號
+
             // 查詢訂單明細（房型）
             const roomResult = await connection.execute(
                 `SELECT 
@@ -773,7 +830,7 @@ router.get('/:booking_id', async (req, res) => {
          LEFT JOIN GDWUUKT.ROOM_RF rf ON od.ROOM_COD = rf.ROOM_TYP
          WHERE TRIM(od.IKEY) = :booking_id
          ORDER BY od.IKEY_SEQ_NOS`,
-                { booking_id }
+                { booking_id: actual_booking_id }
             );
 
             const rooms = roomResult.rows.map(row => ({
@@ -785,7 +842,7 @@ router.get('/:booking_id', async (req, res) => {
             }));
 
             // 使用統一的狀態判斷函數 (DRY)
-            const { statusCode, statusName } = await getEffectiveStatus(connection, booking_id, order[6]);
+            const { statusCode, statusName } = await getEffectiveStatus(connection, actual_booking_id, order[6]);
 
             res.json({
                 success: true,
@@ -798,7 +855,9 @@ router.get('/:booking_id', async (req, res) => {
                     nights: order[5],
                     status_code: statusCode,
                     remarks: order[7],
+                    deposit_paid: order[8],
                     status_name: statusName,
+                    ota_booking_id: order[9],
                     rooms: rooms
                 }
             });

@@ -53,4 +53,12 @@ ENV/
 *.tmp
 *.temp
 test_*.py
-debug_*.py
+# 依賴套件
+node_modules/
+dist/
+build/
+.next/
+.serverless/
+.output/
+.nuxt/
+
