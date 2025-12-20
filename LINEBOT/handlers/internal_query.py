@@ -22,6 +22,7 @@ class InternalQueryHandler:
             dict: 包含入住數、退房數、住房率等資訊
         """
         try:
+            # 取得 Dashboard 基本數據
             response = requests.get(
                 f"{self.backend_url}/api/pms/dashboard",
                 timeout=5
@@ -31,13 +32,49 @@ class InternalQueryHandler:
                 data = response.json()
                 if data.get('success') and data.get('data'):
                     stats = data['data']
-                    total = stats.get('totalRooms', 0)
-                    occupied = stats.get('occupiedRooms', 0)
-                    rate = round((occupied / total * 100), 1) if total > 0 else 0
                     checkin_count = stats.get('todayCheckin', 0)
                     checkout_count = stats.get('todayCheckout', 0)
                     
-                    # 額外取得今日入住的房間總數
+                    # 從 rooms/status 取得更準確的房間狀態
+                    try:
+                        room_resp = requests.get(
+                            f"{self.backend_url}/api/pms/rooms/status",
+                            timeout=5
+                        )
+                        if room_resp.status_code == 200:
+                            room_data = room_resp.json()
+                            all_rooms = room_data.get('data', {}).get('rooms', [])
+                            
+                            # 根據 room_status 計算：
+                            # - O (Occupied) = 在住
+                            # - V (Vacant) = 空房 (含瑕疵房，仍可售)
+                            # - R (Repair) = 維修/故障，不可售
+                            occupied = len([r for r in all_rooms if r.get('room_status', {}).get('code') == 'O'])
+                            vacant = len([r for r in all_rooms if r.get('room_status', {}).get('code') == 'V'])
+                            repair = len([r for r in all_rooms if r.get('room_status', {}).get('code') == 'R'])
+                            total = len(all_rooms)
+                            
+                            # 可售房 = 總房 - 維修房
+                            available_total = total - repair
+                            # 住房率 = 在住 / 可售房
+                            rate = round((occupied / available_total * 100), 1) if available_total > 0 else 0
+                        else:
+                            # Fallback 舊邏輯
+                            total = stats.get('totalRooms', 54)
+                            occupied = stats.get('occupiedRooms', 0)
+                            vacant = total - occupied
+                            repair = 0
+                            available_total = total
+                            rate = round((occupied / total * 100), 1) if total > 0 else 0
+                    except:
+                        total = stats.get('totalRooms', 54)
+                        occupied = stats.get('occupiedRooms', 0)
+                        vacant = total - occupied
+                        repair = 0
+                        available_total = total
+                        rate = round((occupied / total * 100), 1) if total > 0 else 0
+                    
+                    # 取得今日入住的房間總數
                     checkin_rooms = 0
                     try:
                         checkin_resp = requests.get(
@@ -47,11 +84,21 @@ class InternalQueryHandler:
                         if checkin_resp.status_code == 200:
                             checkin_data = checkin_resp.json()
                             for b in checkin_data.get('data', []):
-                                # 優先用 room_numbers 陣列長度，其次用 room_count
                                 room_numbers = b.get('room_numbers', [])
                                 checkin_rooms += len(room_numbers) if room_numbers else b.get('room_count', 1)
                     except:
-                        checkin_rooms = checkin_count  # 備援：假設 1:1
+                        checkin_rooms = checkin_count
+                    
+                    # 組合訊息
+                    lines = [f"📊 今日房況"]
+                    lines.append(f"━━━━━━━━━━━━━━━━━")
+                    lines.append(f"• 今日入住：{checkin_count} 筆 / {checkin_rooms} 間")
+                    lines.append(f"• 今日退房：{checkout_count} 筆")
+                    lines.append(f"• 在住房間：{occupied} 間")
+                    lines.append(f"• 可售空房：{vacant} 間")
+                    if repair > 0:
+                        lines.append(f"• 維修中：{repair} 間")
+                    lines.append(f"• 住房率：{rate}% ({occupied}/{available_total})")
                     
                     return {
                         'success': True,
@@ -60,17 +107,208 @@ class InternalQueryHandler:
                         'today_checkout': checkout_count,
                         'occupied_rooms': occupied,
                         'total_rooms': total,
-                        'vacant_rooms': total - occupied,
+                        'vacant_rooms': vacant,
+                        'oos_rooms': oos,
                         'occupancy_rate': rate,
-                        'message': f"📊 今日房況：\n"
-                                   f"• 入住：{checkin_count} 筆 / {checkin_rooms} 間\n"
-                                   f"• 退房：{checkout_count} 筆\n"
-                                   f"• 住房率：{rate}% ({occupied}/{total})\n"
-                                   f"• 空房：{total - occupied} 間"
+                        'message': '\n'.join(lines)
                     }
             
             return {'success': False, 'message': '❌ 無法取得房況資訊'}
             
+        except Exception as e:
+            return {'success': False, 'message': f'❌ 查詢失敗: {str(e)}'}
+    
+    def query_yesterday_status(self) -> dict:
+        """
+        查詢昨日房況（詳細版）
+        
+        Returns:
+            dict: 包含昨日入住數、房間數、房型分布、來源統計等資訊
+        """
+        try:
+            yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+            weekday_name = ['一', '二', '三', '四', '五', '六', '日'][(datetime.now() - timedelta(days=1)).weekday()]
+            
+            booking_count = 0
+            room_count = 0
+            room_type_stats = {}  # 房型統計
+            source_stats = {}     # 來源統計
+            
+            try:
+                response = requests.get(
+                    f"{self.pms_api_url}/api/bookings/checkin-by-date",
+                    params={'date': yesterday},
+                    timeout=5
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    bookings = data.get('data', [])
+                    booking_count = len(bookings)
+                    
+                    for b in bookings:
+                        room_numbers = b.get('room_numbers', [])
+                        rooms = len(room_numbers) if room_numbers else b.get('room_count', 1)
+                        room_count += rooms
+                        
+                        # 統計房型
+                        for room in b.get('rooms', []):
+                            rt_code = room.get('room_type_code', '').strip()
+                            rt_name = self._get_room_type_name(rt_code)
+                            room_type_stats[rt_name] = room_type_stats.get(rt_name, 0) + 1
+                        
+                        # 統計來源 (從 remarks 或 ota_booking_id 判斷)
+                        source = self._detect_booking_source(b)
+                        source_stats[source] = source_stats.get(source, 0) + 1
+                        
+            except Exception as e:
+                return {'success': False, 'message': f'❌ 查詢失敗: {str(e)}'}
+            
+            # 組合訊息
+            lines = [f"📊 昨日房況 ({yesterday} 週{weekday_name})"]
+            lines.append(f"━━━━━━━━━━━━━━━━━")
+            lines.append(f"📈 已住統計：{booking_count} 筆 / {room_count} 間")
+            
+            if room_type_stats:
+                lines.append(f"\n🏨 房型分布：")
+                for rt, count in sorted(room_type_stats.items(), key=lambda x: -x[1]):
+                    lines.append(f"• {rt}：{count} 間")
+            
+            if source_stats:
+                lines.append(f"\n📱 訂房來源：")
+                for src, count in sorted(source_stats.items(), key=lambda x: -x[1]):
+                    lines.append(f"• {src}：{count} 筆")
+            
+            return {
+                'success': True,
+                'yesterday_checkin': booking_count,
+                'yesterday_rooms': room_count,
+                'date': yesterday,
+                'room_types': room_type_stats,
+                'sources': source_stats,
+                'message': '\n'.join(lines)
+            }
+            
+        except Exception as e:
+            return {'success': False, 'message': f'❌ 查詢失敗: {str(e)}'}
+    
+    def _get_room_type_name(self, code: str) -> str:
+        """將房型代碼轉換為中文名稱"""
+        mapping = {
+            'SD': '精緻雙人房',
+            'CD': '海景雙人房',
+            'CF': '海景四人房',
+            'SF': '精緻四人房',
+            'SU': '景觀套房',
+            'CU': '海景套房',
+        }
+        return mapping.get(code.strip().upper(), code or '未知房型')
+    
+    def _detect_booking_source(self, booking: dict) -> str:
+        """偵測訂房來源"""
+        ota_id = booking.get('ota_booking_id', '') or ''
+        remarks = booking.get('remarks', '') or ''
+        
+        if 'RMAG' in ota_id or 'agoda' in remarks.lower():
+            return 'Agoda'
+        elif 'RMBK' in ota_id or 'booking' in remarks.lower():
+            return 'Booking.com'
+        elif 'RMEX' in ota_id or 'expedia' in remarks.lower():
+            return 'Expedia'
+        elif ota_id:
+            return 'OTA'
+        else:
+            return '官網/電話'
+    
+    def query_specific_date(self, date_str: str) -> dict:
+        """
+        查詢特定日期房況（詳細版）
+        
+        Args:
+            date_str: 日期字串 (YYYY-MM-DD 格式)
+            
+        Returns:
+            dict: 包含該日入住數、房間數、房型分布、來源統計等資訊
+        """
+        try:
+            # 解析日期以取得星期
+            target_date = datetime.strptime(date_str, '%Y-%m-%d')
+            weekday_name = ['一', '二', '三', '四', '五', '六', '日'][target_date.weekday()]
+            
+            # 判斷是過去還是未來，決定用詞
+            today = datetime.now().date()
+            if target_date.date() < today:
+                time_label = "已住"
+                action_label = "已住"
+            elif target_date.date() == today:
+                time_label = "今日"
+                action_label = "入住"
+            else:
+                time_label = "預訂"
+                action_label = "預訂"
+            
+            booking_count = 0
+            room_count = 0
+            room_type_stats = {}
+            source_stats = {}
+            
+            try:
+                response = requests.get(
+                    f"{self.pms_api_url}/api/bookings/checkin-by-date",
+                    params={'date': date_str},
+                    timeout=5
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    bookings = data.get('data', [])
+                    booking_count = len(bookings)
+                    
+                    for b in bookings:
+                        room_numbers = b.get('room_numbers', [])
+                        rooms = len(room_numbers) if room_numbers else b.get('room_count', 1)
+                        room_count += rooms
+                        
+                        # 統計房型
+                        for room in b.get('rooms', []):
+                            rt_code = room.get('room_type_code', '').strip()
+                            rt_name = self._get_room_type_name(rt_code)
+                            room_type_stats[rt_name] = room_type_stats.get(rt_name, 0) + 1
+                        
+                        # 統計來源
+                        source = self._detect_booking_source(b)
+                        source_stats[source] = source_stats.get(source, 0) + 1
+                        
+            except Exception as e:
+                return {'success': False, 'message': f'❌ 查詢失敗: {str(e)}'}
+            
+            # 組合訊息
+            lines = [f"📊 {date_str} (週{weekday_name}) 【{time_label}】"]
+            lines.append(f"━━━━━━━━━━━━━━━━━")
+            lines.append(f"📈 {action_label}統計：{booking_count} 筆 / {room_count} 間")
+            
+            if room_type_stats:
+                lines.append(f"\n🏨 房型分布：")
+                for rt, count in sorted(room_type_stats.items(), key=lambda x: -x[1]):
+                    lines.append(f"• {rt}：{count} 間")
+            
+            if source_stats:
+                lines.append(f"\n📱 訂房來源：")
+                for src, count in sorted(source_stats.items(), key=lambda x: -x[1]):
+                    lines.append(f"• {src}：{count} 筆")
+            
+            return {
+                'success': True,
+                'checkin_count': booking_count,
+                'room_count': room_count,
+                'date': date_str,
+                'room_types': room_type_stats,
+                'sources': source_stats,
+                'message': '\n'.join(lines)
+            }
+            
+        except ValueError:
+            return {'success': False, 'message': f'❌ 日期格式錯誤: {date_str}'}
         except Exception as e:
             return {'success': False, 'message': f'❌ 查詢失敗: {str(e)}'}
     
@@ -155,35 +393,44 @@ class InternalQueryHandler:
     
     def query_month_forecast(self) -> dict:
         """
-        查詢本月入住統計（剩餘天數）
+        查詢本月入住統計（完整月份：月初到月底）
         
         Returns:
-            dict: 包含本月剩餘各日入住數預測
+            dict: 包含本月各日入住數
         """
         try:
             today = datetime.now()
             
-            # 計算本月剩餘天數
-            # 取得本月最後一天
+            # 取得本月第一天與最後一天
+            first_day = today.replace(day=1)
             if today.month == 12:
                 last_day = datetime(today.year + 1, 1, 1) - timedelta(days=1)
             else:
                 last_day = datetime(today.year, today.month + 1, 1) - timedelta(days=1)
             
-            remaining_days = (last_day.date() - today.date()).days + 1
+            total_days = (last_day.date() - first_day.date()).days + 1
             
-            # 限制查詢天數（避免太多 API 調用）
-            if remaining_days > 14:
-                remaining_days = 14
-                title = f"本月後 14 天 ({today.strftime('%m/%d')}~{(today + timedelta(days=13)).strftime('%m/%d')})"
-            else:
-                title = f"本月剩餘 ({today.strftime('%m/%d')}~{last_day.strftime('%m/%d')})"
+            # 限制查詢天數（避免太多 API 調用，最多顯示 31 天）
+            if total_days > 31:
+                total_days = 31
             
-            lines = [f"📅 {title} 入住預測：\n"]
+            title = f"{today.year}年{today.month}月 ({first_day.strftime('%m/%d')}~{last_day.strftime('%m/%d')})"
+            
+            lines = [f"📅 {title} 入住統計：\n"]
+            lines.append("───── 已過日期 ─────")
+            
             total_bookings = 0
             total_rooms = 0
+            past_bookings = 0
+            past_rooms = 0
+            future_bookings = 0
+            future_rooms = 0
             
-            dates = [today + timedelta(days=i) for i in range(remaining_days)]
+            dates = [first_day + timedelta(days=i) for i in range(total_days)]
+            
+            past_lines = []
+            future_lines = []
+            today_line = None
             
             for d in dates:
                 date_str = d.strftime('%Y-%m-%d')
@@ -212,9 +459,40 @@ class InternalQueryHandler:
                 
                 total_bookings += booking_count
                 total_rooms += room_count
-                lines.append(f"• {d.strftime('%m/%d')} (週{weekday_name})：{booking_count} 筆 / {room_count} 間")
+                
+                # 判斷是過去、今天還是未來
+                line_text = f"• {d.strftime('%m/%d')} (週{weekday_name})：{booking_count} 筆 / {room_count} 間"
+                
+                if d.date() < today.date():
+                    past_bookings += booking_count
+                    past_rooms += room_count
+                    past_lines.append(line_text)
+                elif d.date() == today.date():
+                    today_line = f"▶ {d.strftime('%m/%d')} (週{weekday_name})：{booking_count} 筆 / {room_count} 間 ◀ 今日"
+                else:
+                    future_bookings += booking_count
+                    future_rooms += room_count
+                    future_lines.append(line_text)
             
-            lines.append(f"\n📊 合計：{total_bookings} 筆訂單 / {total_rooms} 間房")
+            # 組合輸出
+            if past_lines:
+                lines.extend(past_lines)
+            else:
+                lines.append("（無已過日期）")
+                
+            lines.append("\n───── 今 日 ─────")
+            if today_line:
+                lines.append(today_line)
+            
+            lines.append("\n───── 未來日期 ─────")
+            if future_lines:
+                lines.extend(future_lines)
+            else:
+                lines.append("（無未來日期）")
+            
+            lines.append(f"\n📊 本月合計：{total_bookings} 筆訂單 / {total_rooms} 間房")
+            lines.append(f"   • 已過：{past_bookings} 筆 / {past_rooms} 間")
+            lines.append(f"   • 未來：{future_bookings} 筆 / {future_rooms} 間")
             
             return {
                 'success': True,

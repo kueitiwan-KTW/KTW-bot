@@ -4,6 +4,89 @@
 
 ---
 
+## [1.9.0] - 2025-12-21
+
+### ✨ 新功能：智慧日期查詢與 AI 意圖判斷
+
+大幅增強內部 VIP 的 PMS 查詢功能，從硬編碼關鍵字升級為 AI 意圖判斷模式。
+
+#### 1. AI 意圖判斷系統 (Intent Detection)
+
+- **檔案**: `handlers/vip_service_handler.py` (L120-230)
+- **新增**: `_detect_query_intent()` 方法，使用 Gemini AI 判斷用戶查詢意圖
+- **優勢**: 能理解口語化表達，如「前一天住了多少」、「聖誕節那天有幾間預訂」
+- **備援**: 當 AI 判斷失敗時，自動退回 `_fallback_keyword_detection()` 關鍵字匹配
+
+#### 2. 昨日房況查詢 (Yesterday Status)
+
+- **檔案**: `handlers/internal_query.py` (L77-147)
+- **新增**: `query_yesterday_status()` 函數
+- **觸發**: 「昨天」、「昨日」、「昨天入住狀況」等
+- **輸出**: 顯示已住統計、房型分布、訂房來源
+
+#### 3. 特定日期查詢 (Specific Date Query)
+
+- **檔案**: `handlers/internal_query.py` (L178-269)
+- **檔案**: `handlers/vip_service_handler.py` (L261-294)
+- **新增**: `query_specific_date()` 函數與 `_parse_date_from_message()` 日期解析器
+- **支援格式**: `12/25`、`12月25日`、`25號`、`2025-12-25`
+- **智慧標籤**: 過去日期→「已住」、今日→「入住」、未來日期→「預訂」
+
+#### 4. 完整月份統計 (Full Month Forecast)
+
+- **檔案**: `handlers/internal_query.py` (L300-380)
+- **修改**: `query_month_forecast()` 現在顯示整個月（1號到月底）
+- **分區顯示**: 已過日期、今日、未來日期
+
+#### 5. 房況計算修正 (Room Status Calculation)
+
+- **檔案**: `handlers/internal_query.py` (L37-90)
+- **問題**: 原計算錯誤扣除「瑕疵房」(OOS)
+- **修正**: 使用 `room_status=R` 判斷真正停用的「維修房」
+- **公式**: 
+  - 可售總房 = 總房數 - 維修房 (R)
+  - 住房率 = 在住 (O) / 可售總房
+
+#### 6. 查詢結果詳細化
+
+- **修改**: 昨日/特定日期查詢現在顯示房型分布與訂房來源統計
+- **新增**: `_get_room_type_name()` 房型代碼轉中文
+- **新增**: `_detect_booking_source()` 訂房來源偵測 (Agoda/Booking/官網)
+
+### 📝 文檔更新
+
+- **檔案**: `pms-api/PMS-DATABASE-REFERENCE.md`
+- **新增**: 瑕疵房 vs 維修房 的業務邏輯說明
+- **新增**: `ROOM_STA = R` (維修/故障) 狀態代碼
+
+---
+
+## [1.8.5] - 2025-12-21
+
+### 🏗️ 結構重構：VIP Service Handler 優化
+
+為了提升內部管理層的服務體驗與系統代碼品質，對 VIP 處理器進行了全面重構。
+
+1. **邏輯整合與冗餘消除 (Logic Consolidation)**
+   - **檔案**: `handlers/vip_service_handler.py` (L114-177, L129-178)
+   - **修改**: 將相似的「房況預測」（週/週末/月）與「今日狀態」查詢邏輯整合為統一的處理塊。
+   - **優化**: 使用辭典映射（Map）管理關鍵字，提升了擴展性與可讀性。
+
+2. **標準化 Prompt 體系 (Standardized Prompts)**
+   - **檔案**: `handlers/vip_service_handler.py` (L179-195)
+   - **新增**: `_get_standard_system_prompt()` 方法。
+   - **效果**: 確保 Vision 與 Chat 行為高度一致，包含專業稱呼、語言自適應（中文問中文答等）以及處理規則。
+
+3. **穩定性與錯誤處理強化 (Robustness)**
+   - **檔案**: `handlers/vip_service_handler.py` (L231-233, L321-393)
+   - **優化**: 提升調用 Gemini SDK 的異常捕捉精度。當 AI 服務繁忙時，回傳更具建設性且有禮貌的錯誤引導訊息，而非生硬的系統報錯。
+
+4. **意圖偵測精準度提升**
+   - **檔案**: `handlers/vip_service_handler.py` (L168-175, L290-309)
+   - **變更**: 優化姓名查詢的正則表達式，並加入排除清單（排除「今天」、「誰」等口語詞），有效減少誤判率。
+
+---
+
 ## [1.8.0] - 2025-12-21
 
 ### ✨ 新功能：營運報表擴展

@@ -20,6 +20,7 @@
 
 ### 1.1 核心價值
 *   **專業紀錄**：專業並記錄筆記結果，同步上傳 Notion/GitHub。都需採繁體中文，如需用到英文需加上中文註解 (Chinese Annotation)，尊崇 DRY (Don't Repeat Yourself) 原則。
+    - **全語境繁體中文**：從 AI 的內部思考 (`thought`)、工具調用參數 (`TaskName`, `TaskStatus`, `Summary`) 到最終輸出，**全面禁止使用英文或簡體中文**（除非是程式碼關鍵字、API 名稱或專有名詞）。**若因技術必要需使用英文詞彙，必須在後方括號補充繁體中文註解 (Chinese Annotation)**。
 *   **簡潔至上**：恪守 KISS (Keep It Simple, Stupid) 原則，崇尚簡潔與可維護性，避免過度工程化與不必要的防禦性設計。
 *   **深度分析**：立足於第一性原理 (First Principles Thinking) 剖析問題，並善用工具以提升效率。
 *   **事實為本**：以事實為最高準則。若有任何誤解，懇請坦率扶正，助我精進。
@@ -87,7 +88,11 @@ AI 結合知識庫生成自然回覆
 
 ### 1.5 輸出規範
 *   **測試驗證**：輸出前自己必須模擬真實測試，反覆確認。
-*   **語言要求**：所有回覆、思考過程及任務清單，均須使用繁體中文。
+*   **語言絕對要求**：**全程繁體中文**。這包含：
+    1.  **內部思考 (Thought Phase / 思考階段)**：AI 在動手前的邏輯推演。
+    2.  **工具參數 (Tool Arguments / 工具參數)**：如 `task_boundary` 的 `TaskName`、`TaskStatus` 等。
+    3.  **所有文檔 (Artifacts / 產出文檔)**：`Implementation Plan` (實作計畫), `Task List` (任務清單), `Walkthrough` (成果演示)。
+    - **補充規則**：若遇到無法避免的英文（如 API 名稱 `generate_content`），須以 `英文 (繁體中文註解)` 格式呈現。
 *   **固定格式**：`Implementation Plan`, `Task List`
 
 ---
