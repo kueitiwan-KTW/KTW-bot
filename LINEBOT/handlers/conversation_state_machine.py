@@ -6,6 +6,7 @@
 - 提供統一的狀態轉換 API
 - 處理跨流程意圖跳轉 (pending_intent)
 - 根據狀態決定應使用的 Handler
+- 【新增】持久化到 SQLite (透過 KTW-backend API)
 
 設計原則：
 - Single Source of Truth (SSOT)
@@ -15,10 +16,12 @@
 
 from typing import Dict, Optional, Any
 from datetime import datetime
+import requests
+import os
 
 
 class ConversationStateMachine:
-    """統一對話狀態機"""
+    """統一對話狀態機（含 SQLite 持久化）"""
     
     # 狀態定義
     STATE_IDLE = 'idle'
@@ -40,12 +43,17 @@ class ConversationStateMachine:
     STATE_BOOKING_COLLECT_PHONE = 'booking.collect_phone'
     STATE_BOOKING_COLLECT_ARRIVAL = 'booking.collect_arrival'
     STATE_BOOKING_COLLECT_SPECIAL = 'booking.collect_special'
+    STATE_BOOKING_COLLECT_REQUESTS = 'booking.collect_requests'
     STATE_BOOKING_CONFIRM = 'booking.confirm'
     STATE_BOOKING_COMPLETED = 'booking.completed'
+    
+    # KTW-backend API URL (本地，非 PMS 192.168.8.3)
+    BACKEND_API_URL = os.getenv('KTW_BACKEND_URL', 'http://localhost:3000')
     
     def __init__(self):
         """初始化狀態機"""
         self.sessions: Dict[str, Dict[str, Any]] = {}
+        self._sync_enabled = True  # 可透過環境變數關閉同步
     
     def get_session(self, user_id: str) -> Dict[str, Any]:
         """
@@ -58,7 +66,13 @@ class ConversationStateMachine:
             用戶的 session dict
         """
         if user_id not in self.sessions:
-            self.sessions[user_id] = self._create_default_session()
+            # 先嘗試從 SQLite 載入
+            persisted = self._load_from_backend(user_id)
+            if persisted:
+                self.sessions[user_id] = persisted
+                print(f"📥 Session 從 SQLite 載入: {user_id} → {persisted.get('state')}")
+            else:
+                self.sessions[user_id] = self._create_default_session()
         return self.sessions[user_id]
     
     def _create_default_session(self) -> Dict[str, Any]:
@@ -69,7 +83,70 @@ class ConversationStateMachine:
             'updated_at': datetime.now().isoformat(),
             'data': {},  # 流程相關資料
             'pending_intent': None,  # 待處理意圖
+            'pending_intent_message': None,
         }
+    
+    def _load_from_backend(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """從 KTW-backend 載入 session"""
+        if not self._sync_enabled:
+            return None
+        try:
+            response = requests.get(
+                f"{self.BACKEND_API_URL}/api/bot/sessions/{user_id}",
+                timeout=2
+            )
+            if response.ok:
+                result = response.json()
+                if result.get('success') and result.get('data'):
+                    db_session = result['data']
+                    return {
+                        'state': db_session.get('state', self.STATE_IDLE),
+                        'created_at': db_session.get('created_at', datetime.now().isoformat()),
+                        'updated_at': db_session.get('updated_at', datetime.now().isoformat()),
+                        'data': db_session.get('data', {}),
+                        'pending_intent': db_session.get('pending_intent'),
+                        'pending_intent_message': db_session.get('pending_intent_message'),
+                    }
+        except Exception as e:
+            print(f"⚠️ 載入 Session 失敗: {e}")
+        return None
+    
+    def _sync_to_backend(self, user_id: str):
+        """同步 session 到 KTW-backend"""
+        if not self._sync_enabled:
+            return
+        try:
+            session = self.sessions.get(user_id)
+            if not session:
+                return
+            
+            payload = {
+                'handler_type': self.get_active_handler_type(user_id),
+                'state': session.get('state'),
+                'data': session.get('data', {}),
+                'pending_intent': session.get('pending_intent'),
+                'pending_intent_message': session.get('pending_intent_message'),
+            }
+            
+            requests.put(
+                f"{self.BACKEND_API_URL}/api/bot/sessions/{user_id}",
+                json=payload,
+                timeout=2
+            )
+        except Exception as e:
+            print(f"⚠️ 同步 Session 失敗: {e}")
+    
+    def _delete_from_backend(self, user_id: str):
+        """從 KTW-backend 刪除 session"""
+        if not self._sync_enabled:
+            return
+        try:
+            requests.delete(
+                f"{self.BACKEND_API_URL}/api/bot/sessions/{user_id}",
+                timeout=2
+            )
+        except Exception as e:
+            print(f"⚠️ 刪除 Session 失敗: {e}")
     
     def get_state(self, user_id: str) -> str:
         """
@@ -103,6 +180,9 @@ class ConversationStateMachine:
             session['data'].update(data)
         
         print(f"🔄 State Transition [{user_id}]: {old_state} → {target_state}")
+        
+        # 同步到 SQLite
+        self._sync_to_backend(user_id)
     
     def get_data(self, user_id: str, key: str = None) -> Any:
         """
@@ -132,6 +212,9 @@ class ConversationStateMachine:
         session = self.get_session(user_id)
         session['data'][key] = value
         session['updated_at'] = datetime.now().isoformat()
+        
+        # 同步到 SQLite
+        self._sync_to_backend(user_id)
     
     def get_active_handler_type(self, user_id: str) -> str:
         """
@@ -171,6 +254,9 @@ class ConversationStateMachine:
             session['pending_intent_message'] = message
         session['updated_at'] = datetime.now().isoformat()
         print(f"📌 Pending Intent Set [{user_id}]: {intent}")
+        
+        # 同步到 SQLite
+        self._sync_to_backend(user_id)
     
     def get_pending_intent(self, user_id: str) -> Optional[str]:
         """
@@ -194,11 +280,14 @@ class ConversationStateMachine:
         """
         session = self.get_session(user_id)
         if 'pending_intent' in session:
-            del session['pending_intent']
+            session['pending_intent'] = None
         if 'pending_intent_message' in session:
-            del session['pending_intent_message']
+            session['pending_intent_message'] = None
         session['updated_at'] = datetime.now().isoformat()
         print(f"🧹 Pending Intent Cleared [{user_id}]")
+        
+        # 同步到 SQLite
+        self._sync_to_backend(user_id)
     
     def execute_pending_intent(self, user_id: str) -> Optional[str]:
         """
@@ -236,6 +325,10 @@ class ConversationStateMachine:
         """
         if user_id in self.sessions:
             del self.sessions[user_id]
+        
+        # 從 SQLite 刪除
+        self._delete_from_backend(user_id)
+        
         print(f"🔄 Session Reset [{user_id}]")
     
     def is_in_active_flow(self, user_id: str) -> bool:
@@ -250,3 +343,4 @@ class ConversationStateMachine:
         """
         state = self.get_state(user_id)
         return state != self.STATE_IDLE
+

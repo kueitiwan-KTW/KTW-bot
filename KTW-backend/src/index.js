@@ -7,7 +7,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import dotenv from 'dotenv';
-import { getSupplement, getAllSupplements, updateSupplement } from './helpers/db.js';
+import { getSupplement, getAllSupplements, updateSupplement, getBotSession, updateBotSession, deleteBotSession } from './helpers/db.js';
 import { getBookingSource } from './helpers/bookingSource.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -794,6 +794,61 @@ app.get('/', (req, res) => {
             'GET /api/pms/bookings/:id'
         ]
     });
+});
+
+// ============================================
+// Bot Session 持久化 API (給 LINEBOT 呼叫)
+// 注意：這是 KTW-backend 本地 API，非 PMS API (192.168.8.3)
+// ============================================
+
+// 取得 Bot Session
+app.get('/api/bot/sessions/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const session = await getBotSession(userId);
+
+        if (session) {
+            res.json({ success: true, data: session });
+        } else {
+            res.json({ success: true, data: null });
+        }
+    } catch (error) {
+        console.error('取得 Bot Session 失敗:', error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 更新 Bot Session
+app.put('/api/bot/sessions/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const sessionData = req.body;
+
+        await updateBotSession(userId, sessionData);
+
+        console.log(`💾 Bot Session 已儲存: ${userId} → ${sessionData.state}`);
+
+        res.json({ success: true, message: 'Session 已更新' });
+    } catch (error) {
+        console.error('更新 Bot Session 失敗:', error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 刪除 Bot Session
+app.delete('/api/bot/sessions/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+
+        await deleteBotSession(userId);
+
+        console.log(`🗑️ Bot Session 已刪除: ${userId}`);
+
+        res.json({ success: true, message: 'Session 已刪除' });
+    } catch (error) {
+        console.error('刪除 Bot Session 失敗:', error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
 });
 
 // ============================================

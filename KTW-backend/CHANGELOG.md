@@ -4,6 +4,45 @@
 
 ---
 
+## [1.2.0] - 2025-12-20
+
+### ✨ 新功能：Bot Session 持久化 (Session Persistence)
+
+#### 1. 資料庫層 (SQLite)
+**檔案**: `src/helpers/db.js` (L111-215)
+- **新增資料表**: `bot_sessions`
+  ```sql
+  CREATE TABLE bot_sessions (
+      user_id TEXT PRIMARY KEY,
+      handler_type TEXT,      -- 'order_query', 'same_day_booking', etc.
+      state TEXT,             -- 狀態字串
+      data TEXT,              -- JSON 格式流程資料
+      pending_intent TEXT,    -- 排隊意圖
+      pending_intent_message TEXT,
+      created_at DATETIME,
+      updated_at DATETIME
+  );
+  ```
+- **新增函數**: 
+  - `getBotSession(userId)` - 讀取 session
+  - `updateBotSession(userId, data)` - 更新 session
+  - `deleteBotSession(userId)` - 刪除 session
+
+#### 2. API 端點
+**檔案**: `src/index.js` (L799-850)
+| 方法 | 端點 | 說明 |
+|-----|------|------|
+| GET | `/api/bot/sessions/:userId` | 取得 Bot Session |
+| PUT | `/api/bot/sessions/:userId` | 更新 Bot Session |
+| DELETE | `/api/bot/sessions/:userId` | 刪除 Bot Session |
+
+#### 3. 設計特點
+- **可擴展性**: 新增狀態機時不需修改資料庫結構
+- **容錯性**: API 失敗時不影響 Bot 正常運作
+- **效能**: 使用記憶體快取 + SQLite 持久化雙層架構
+
+---
+
 ## [1.1.1] - 2025-12-19
 
 ### ✨ 資料同步、匹配效率與標識強化

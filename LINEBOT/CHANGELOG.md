@@ -4,6 +4,38 @@
 
 ---
 
+## [1.5.0] - 2025-12-20
+
+### ✨ 新功能：對話狀態持久化 (Session Persistence)
+
+#### 核心變更
+**檔案**: `handlers/conversation_state_machine.py` (全檔重構)
+
+1. **SQLite 同步整合**
+   - 新增 `_load_from_backend()` - 從 SQLite 載入 session
+   - 新增 `_sync_to_backend()` - 同步 session 到 SQLite
+   - 新增 `_delete_from_backend()` - 從 SQLite 刪除 session
+
+2. **自動持久化觸發點**
+   - `transition()` - 狀態轉換時同步
+   - `set_data()` - 資料更新時同步
+   - `set_pending_intent()` - 設定排隊意圖時同步
+   - `clear_pending_intent()` - 清除意圖時同步
+   - `reset_session()` - 重置時刪除
+
+3. **環境變數**
+   - `KTW_BACKEND_URL` - 可自訂 Backend API URL (預設: `http://localhost:3000`)
+
+#### 解決的問題
+- ✅ 伺服器重啟後對話狀態不再消失
+- ✅ 排隊意圖 (pending_intent) 持久保存
+- ✅ 流程中斷後下次訊息可自動觸發排隊意圖
+
+#### 依賴變更
+- 新增 `requests` 套件依賴（已包含在 requirements.txt）
+
+---
+
 ## [1.4.10] - 2025-12-19
 
 ### ✨ 系統流程、穩定性與同步強化
