@@ -7,7 +7,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import dotenv from 'dotenv';
-import { getSupplement, getAllSupplements, updateSupplement, getBotSession, updateBotSession, deleteBotSession } from './helpers/db.js';
+import { getSupplement, getAllSupplements, updateSupplement, getBotSession, updateBotSession, deleteBotSession, getAllVipUsers, getVipUser, addVipUser, deleteVipUser } from './helpers/db.js';
 import { getBookingSource } from './helpers/bookingSource.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -847,6 +847,86 @@ app.delete('/api/bot/sessions/:userId', async (req, res) => {
         res.json({ success: true, message: 'Session 已刪除' });
     } catch (error) {
         console.error('刪除 Bot Session 失敗:', error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ============================================
+// VIP 用戶管理 API
+// ============================================
+
+// 取得所有 VIP 用戶
+app.get('/api/vip', async (req, res) => {
+    try {
+        const users = await getAllVipUsers();
+        res.json({ success: true, data: users, count: users.length });
+    } catch (error) {
+        console.error('取得 VIP 列表失敗:', error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 查詢特定用戶 VIP 狀態
+app.get('/api/vip/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const user = await getVipUser(userId);
+
+        res.json({
+            success: true,
+            data: user,
+            is_vip: !!user,
+            vip_type: user?.vip_type || null,
+            is_internal: user?.vip_type === 'internal'
+        });
+    } catch (error) {
+        console.error('查詢 VIP 狀態失敗:', error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 新增 VIP 用戶
+app.post('/api/vip', async (req, res) => {
+    try {
+        const { userId, displayName, type, level, role, permissions, note } = req.body;
+
+        if (!userId) {
+            return res.status(400).json({ success: false, error: '缺少 userId' });
+        }
+
+        const result = await addVipUser({
+            line_user_id: userId,
+            display_name: displayName,
+            vip_type: type || 'guest',
+            vip_level: level || 1,
+            role: role,
+            permissions: permissions,
+            note: note
+        });
+
+        console.log(`⭐ VIP 用戶已新增: ${userId} (${type || 'guest'})`);
+
+        res.json({ success: true, message: 'VIP 用戶已新增', data: result });
+    } catch (error) {
+        console.error('新增 VIP 用戶失敗:', error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 刪除 VIP 用戶
+app.delete('/api/vip/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const result = await deleteVipUser(userId);
+
+        if (result.changes > 0) {
+            console.log(`🗑️ VIP 用戶已移除: ${userId}`);
+            res.json({ success: true, message: 'VIP 用戶已移除' });
+        } else {
+            res.status(404).json({ success: false, error: '找不到該 VIP 用戶' });
+        }
+    } catch (error) {
+        console.error('刪除 VIP 用戶失敗:', error.message);
         res.status(500).json({ success: false, error: error.message });
     }
 });

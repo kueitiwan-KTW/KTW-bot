@@ -210,19 +210,21 @@ class GmailHelper:
     def _extract_body(self, payload):
         """Recursively extracts the body from the payload."""
         if 'body' in payload and 'data' in payload['body']:
-            return base64.urlsafe_b64decode(payload['body']['data']).decode()
+            raw_content = base64.urlsafe_b64decode(payload['body']['data']).decode()
+            return self._strip_html_tags(raw_content)
         
         if 'parts' in payload:
-            # Priority: text/html (Richer details for Agoda) -> text/plain -> nested parts
-            for part in payload['parts']:
-                if part['mimeType'] == 'text/html':
-                     if 'data' in part['body']:
-                        return base64.urlsafe_b64decode(part['body']['data']).decode()
-            
+            # Priority: text/plain (避免 HTML 解析問題) -> text/html (去除標籤後使用)
             for part in payload['parts']:
                 if part['mimeType'] == 'text/plain':
                      if 'data' in part['body']:
                         return base64.urlsafe_b64decode(part['body']['data']).decode()
+            
+            for part in payload['parts']:
+                if part['mimeType'] == 'text/html':
+                     if 'data' in part['body']:
+                        raw_html = base64.urlsafe_b64decode(part['body']['data']).decode()
+                        return self._strip_html_tags(raw_html)
             
             for part in payload['parts']:
                 if 'parts' in part:
@@ -230,3 +232,56 @@ class GmailHelper:
                     if found: 
                         return found
         return ""
+    
+    def _strip_html_tags(self, html_content: str) -> str:
+        """
+        去除 HTML 標籤，保留純文字內容
+        
+        Args:
+            html_content: 原始 HTML 內容
+            
+        Returns:
+            str: 去除標籤後的純文字
+        """
+        import re
+        
+        try:
+            # 1. 先移除 <style> 和 <script> 區塊（含內容）
+            text = re.sub(r'<style[^>]*>.*?</style>', '', html_content, flags=re.DOTALL | re.IGNORECASE)
+            text = re.sub(r'<script[^>]*>.*?</script>', '', text, flags=re.DOTALL | re.IGNORECASE)
+            
+            # 2. 移除 HTML 註解
+            text = re.sub(r'<!--.*?-->', '', text, flags=re.DOTALL)
+            
+            # 3. 使用 HTMLParser 去除剩餘標籤
+            from html.parser import HTMLParser
+            from io import StringIO
+            
+            class HTMLStripper(HTMLParser):
+                def __init__(self):
+                    super().__init__()
+                    self.reset()
+                    self.strict = False
+                    self.convert_charrefs = True
+                    self.text = StringIO()
+                    
+                def handle_data(self, data):
+                    self.text.write(data)
+                    
+                def get_data(self):
+                    return self.text.getvalue()
+            
+            stripper = HTMLStripper()
+            stripper.feed(text)
+            text = stripper.get_data()
+            
+            # 4. 清理多餘空白和換行
+            text = re.sub(r'\n\s*\n', '\n\n', text)  # 多個空行變成一個
+            text = re.sub(r'[ \t]+', ' ', text)  # 多個空格變成一個
+            text = re.sub(r'\n +', '\n', text)  # 行首空格
+            
+            return text.strip()
+        except Exception as e:
+            print(f"❌ HTML 解析錯誤: {e}")
+            # Fallback: 簡單的正則去除標籤
+            return re.sub(r'<[^>]+>', '', html_content)

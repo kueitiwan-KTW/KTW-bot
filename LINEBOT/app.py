@@ -86,14 +86,12 @@ def handle_message(event):
     except Exception as e:
         print(f"Error getting profile: {e}")
     
-    # 檢查 VIP 狀態
-    is_vip = False
-    try:
-        with open(os.path.join(base_dir, "vip_users.json"), "r") as f:
-            vip_data = json.load(f)
-            is_vip = user_id in vip_data.get("vip_users", [])
-    except:
-        pass
+    # 檢查 VIP 狀態（使用 VIPManager）
+    from handlers.vip_manager import vip_manager
+    vip_info = vip_manager.get_vip_info(user_id)
+    is_vip = vip_info['is_vip']
+    is_internal = vip_info['is_internal']
+    vip_type = vip_info['vip_type']
     
     # 推送客戶資料卡到 Vue.js Admin
     import threading
@@ -104,6 +102,8 @@ def handle_message(event):
             "profile_picture": profile_picture,
             "message": user_msg[:100],  # 限制訊息長度
             "is_vip": is_vip,
+            "vip_type": vip_type,  # 新增：'guest' | 'internal' | None
+            "is_internal": is_internal,  # 新增：內部 VIP 標記
             "timestamp": datetime.now().isoformat()
         })
     threading.Thread(target=async_push).start()

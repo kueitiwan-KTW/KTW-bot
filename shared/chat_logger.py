@@ -166,19 +166,38 @@ class ChatLogger:
         if order_id not in self.orders:
             return False
         
-        if 'special_requests' not in self.orders[order_id]:
-            self.orders[order_id]['special_requests'] = []
-        
-        # 記錄需求
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        request_entry = f"[{timestamp}] {request_type}: {content}"
-        self.orders[order_id]['special_requests'].append(request_entry)
         
-        # 如果是電話或抵達時間，也更新主欄位
+        # 根據類型決定處理方式
         if request_type == 'phone':
+            # 電話：只更新主欄位
             self.orders[order_id]['phone'] = content
+            print(f"📞 已更新電話: {content}")
+            
         elif request_type == 'arrival_time':
+            # 抵達時間：只更新主欄位
             self.orders[order_id]['arrival_time'] = content
+            print(f"⏰ 已更新抵達時間: {content}")
+            
+        elif request_type == 'special_need':
+            # 特殊需求：加入 special_requests 陣列
+            if 'special_requests' not in self.orders[order_id]:
+                self.orders[order_id]['special_requests'] = []
+            
+            request_entry = f"[{timestamp}] {content}"
+            self.orders[order_id]['special_requests'].append(request_entry)
+            print(f"📝 已記錄特殊需求: {content}")
+        
+        else:
+            # 其他類型：加入 special_requests 作為備註
+            if 'special_requests' not in self.orders[order_id]:
+                self.orders[order_id]['special_requests'] = []
+            
+            request_entry = f"[{timestamp}] {request_type}: {content}"
+            self.orders[order_id]['special_requests'].append(request_entry)
+        
+        # 更新時間戳
+        self.orders[order_id]['updated_at'] = timestamp
         
         # 儲存
         return self.save_order(self.orders[order_id])

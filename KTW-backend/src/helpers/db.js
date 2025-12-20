@@ -141,6 +141,125 @@ function initBotSessionsTable() {
 // 在資料庫連線後初始化
 setTimeout(initBotSessionsTable, 500);
 
+// ============================================
+// VIP 用戶管理 (雙層架構: guest + internal)
+// ============================================
+
+/**
+ * 初始化 vip_users 資料表
+ */
+function initVipUsersTable() {
+    const schema = `
+        CREATE TABLE IF NOT EXISTS vip_users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            line_user_id TEXT UNIQUE NOT NULL,
+            display_name TEXT,
+            vip_type TEXT NOT NULL DEFAULT 'guest',
+            vip_level INTEGER DEFAULT 1,
+            role TEXT,
+            permissions TEXT,
+            note TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+    `;
+    db.run(schema, (err) => {
+        if (err) {
+            console.error('❌ 初始化 vip_users 資料表失敗:', err.message);
+        } else {
+            console.log('✅ vip_users 資料表就緒');
+        }
+    });
+}
+
+// 延遲初始化 VIP 表
+setTimeout(initVipUsersTable, 600);
+
+/**
+ * 取得所有 VIP 用戶
+ * @returns {Promise<Array>}
+ */
+export function getAllVipUsers() {
+    return new Promise((resolve, reject) => {
+        db.all('SELECT * FROM vip_users ORDER BY vip_type, vip_level DESC', (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows || []);
+        });
+    });
+}
+
+/**
+ * 查詢用戶 VIP 狀態
+ * @param {string} userId - LINE User ID
+ * @returns {Promise<Object|null>}
+ */
+export function getVipUser(userId) {
+    return new Promise((resolve, reject) => {
+        db.get('SELECT * FROM vip_users WHERE line_user_id = ?', [userId], (err, row) => {
+            if (err) reject(err);
+            else if (row) {
+                // 解析 permissions JSON
+                try {
+                    row.permissions = row.permissions ? JSON.parse(row.permissions) : [];
+                } catch {
+                    row.permissions = [];
+                }
+                resolve(row);
+            } else {
+                resolve(null);
+            }
+        });
+    });
+}
+
+/**
+ * 新增 VIP 用戶
+ * @param {Object} data - VIP 資料
+ */
+export function addVipUser(data) {
+    const { line_user_id, display_name, vip_type, vip_level, role, permissions, note } = data;
+    const now = new Date().toISOString();
+    const permissionsJson = permissions ? JSON.stringify(permissions) : null;
+
+    return new Promise((resolve, reject) => {
+        const sql = `
+            INSERT INTO vip_users (
+                line_user_id, display_name, vip_type, vip_level, role, permissions, note, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(line_user_id) DO UPDATE SET
+                display_name = COALESCE(excluded.display_name, display_name),
+                vip_type = excluded.vip_type,
+                vip_level = excluded.vip_level,
+                role = excluded.role,
+                permissions = excluded.permissions,
+                note = COALESCE(excluded.note, note),
+                updated_at = excluded.updated_at
+        `;
+
+        db.run(sql, [
+            line_user_id, display_name, vip_type || 'guest', vip_level || 1,
+            role, permissionsJson, note, now, now
+        ], function (err) {
+            if (err) reject(err);
+            else resolve({ id: this.lastID, changes: this.changes });
+        });
+    });
+}
+
+/**
+ * 刪除 VIP 用戶
+ * @param {string} userId - LINE User ID
+ */
+export function deleteVipUser(userId) {
+    return new Promise((resolve, reject) => {
+        db.run('DELETE FROM vip_users WHERE line_user_id = ?', [userId], function (err) {
+            if (err) reject(err);
+            else resolve({ changes: this.changes });
+        });
+    });
+}
+
 /**
  * 取得 Bot Session
  * @param {string} userId - LINE 用戶 ID

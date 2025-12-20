@@ -47,6 +47,9 @@ class HotelBot:
             state_machine=self.state_machine  # 注入狀態機
         )
         
+        # VIPServiceHandler 會在 model 初始化後設定
+        self.vip_service = None
+        
         # Initialize User Sessions
         self.user_sessions = {}
         self.user_context = {}  # Store temporary context like pending order IDs
@@ -286,6 +289,11 @@ Your Knowledge Base (FAQ):
              "好的，了解您大約下午會抵達。為了更準確安排，請問大約是下午幾點呢？（例如：下午2點、下午3點等）"
            * If user gives specific time ("下午3點", "15:00", "3pm"), accept it directly
            * ALWAYS call update_guest_info regardless - save what they said first, then ask for clarity if needed
+         
+         - **CRITICAL: 行程變更 vs 抵達時間 區分**:
+           * 「會晚點到」「行程有變」「延後抵達」→ info_type='special_need'（這是變更通知，不是具體時間）
+           * 「晚上8點」「下午3點」「10點」→ info_type='arrival_time'（這才是具體抵達時間）
+           * 當用戶說「會晚點到」後，你應該詢問具體時間，用戶回覆的具體時間才用 arrival_time
        
        - **Special Requests Collection (CRITICAL - MUST SAVE ALL)**:
          - After collecting arrival time, ask: "請問有什麼其他需求或特殊要求嗎？（例如：嬰兒床、消毒鍋、嬰兒澡盆、禁菸房等）"
@@ -445,6 +453,15 @@ Your Knowledge Base (FAQ):
                 'gemini-3-flash-preview',
                 safety_settings=safety_settings
             )
+            
+            # Initialize VIP Service Handler
+            from handlers.vip_service_handler import VIPServiceHandler
+            self.vip_service = VIPServiceHandler(
+                state_machine=self.state_machine,
+                logger=self.logger,
+                vision_model=self.vision_model
+            )
+            print("✅ VIPServiceHandler initialized.")
             
         print("系統啟動：旅館專業客服機器人 (AI Vision + Function Calling + Multi-User + Logging + Weather版) 已就緒。")
 
@@ -1252,13 +1269,17 @@ STEP 2: ONLY AFTER showing all above details, then add weather and contact.
             return "【系統錯誤】尚未設定 GOOGLE_API_KEY，無法辨識圖片。"
 
         try:
-            image = Image.open(io.BytesIO(image_data))
+            # 檢查是否為內部 VIP，委託給 VIPServiceHandler 處理
+            if self.vip_service and self.vip_service.is_internal(user_id):
+                vip_response = self.vip_service.handle_image(user_id, image_data, display_name)
+                if vip_response:
+                    return vip_response
             
-            prompt = """
-            請分析這張圖片。
-            1. 如果圖片中包含「訂單編號」或「Order ID」，請提取出來。
-            2. 告訴我你找到了什麼編號。
-            """
+            # 一般客人：只找訂單編號
+            image = Image.open(io.BytesIO(image_data))
+            prompt = """請分析這張圖片。
+1. 如果圖片中包含「訂單編號」或「Order ID」，請提取出來。
+2. 告訴我你找到了什麼編號。"""
             
             # For vision, we use the separate vision model to avoid tool calling interference
             response = self.vision_model.generate_content([prompt, image])
@@ -1430,6 +1451,8 @@ STEP 2: ONLY AFTER showing all above details, then add weather and contact.
             '今天', '今日'  # 單獨說「今天」也視為訂房意圖
         ]
         return any(kw in message for kw in booking_keywords)
+    
+    # 注意：VIP 相關函數已遷移至 handlers/vip_service_handler.py
 
     def _has_order_number(self, message: str) -> bool:
         """檢查訊息中是否包含訂單編號（排除電話號碼）"""
@@ -1470,6 +1493,22 @@ STEP 2: ONLY AFTER showing all above details, then add weather and contact.
         # 注意：雖然 AI 可以處理部分情境，但狀態機處理器在「進行中流程」具有最高優先權
         
         # ============================================
+        # 內部 VIP 專屬功能 (Internal VIP Functions)
+        # ============================================
+        # 使用 VIPServiceHandler 統一處理 VIP 功能
+        if self.vip_service and self.vip_service.is_internal(user_id):
+            # 優先檢查 VIP 服務是否有待處理狀態
+            if self.vip_service.is_active(user_id):
+                vip_response = self.vip_service.handle_message(user_id, user_question, display_name)
+                if vip_response:
+                    self.logger.log(user_id, "Bot", vip_response)
+                    return vip_response
+            
+            # 檢查是否為內部 VIP 指令
+            vip_response = self.vip_service.handle_message(user_id, user_question, display_name)
+            if vip_response:
+                self.logger.log(user_id, "Bot", vip_response)
+                return vip_response
         # ============================================
 
         # Check for pending context (e.g. Order ID from previous image)
