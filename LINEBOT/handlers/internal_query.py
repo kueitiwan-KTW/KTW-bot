@@ -108,7 +108,7 @@ class InternalQueryHandler:
                         'occupied_rooms': occupied,
                         'total_rooms': total,
                         'vacant_rooms': vacant,
-                        'oos_rooms': oos,
+                        'repair_rooms': repair,
                         'occupancy_rate': rate,
                         'message': '\n'.join(lines)
                     }
@@ -151,11 +151,10 @@ class InternalQueryHandler:
                         rooms = len(room_numbers) if room_numbers else b.get('room_count', 1)
                         room_count += rooms
                         
-                        # 統計房型
-                        for room in b.get('rooms', []):
-                            rt_code = room.get('room_type_code', '').strip()
-                            rt_name = self._get_room_type_name(rt_code)
-                            room_type_stats[rt_name] = room_type_stats.get(rt_name, 0) + 1
+                        # 統計房型 - 用實際房號查詢（昨日=已發生）
+                        actual_types = self._get_actual_room_type(room_numbers)
+                        for rt_name, count in actual_types.items():
+                            room_type_stats[rt_name] = room_type_stats.get(rt_name, 0) + count
                         
                         # 統計來源 (從 remarks 或 ota_booking_id 判斷)
                         source = self._detect_booking_source(b)
@@ -192,17 +191,56 @@ class InternalQueryHandler:
         except Exception as e:
             return {'success': False, 'message': f'❌ 查詢失敗: {str(e)}'}
     
+    # 房號 → 房型代碼對照表（固定不變）
+    ROOM_TYPE_BY_NUMBER = {
+        # 2F
+        '201': 'SQ', '202': 'SQ', '203': 'SD', '205': 'FM', '206': 'SD', '207': 'SD', 
+        '208': 'SD', '210': 'SD', '211': 'SD', '212': 'FM', '213': 'AQ', '215': 'SQ', '216': 'SQ',
+        # 3F
+        '301': 'SQ', '302': 'SQ', '303': 'SQ', '305': 'FM', '306': 'SQ', '307': 'ST', 
+        '308': 'ST', '309': 'ST', '310': 'ST', '311': 'ST', '312': 'FM', '313': 'AQ', '315': 'SQ', '316': 'SQ',
+        # 5F
+        '501': 'WQ', '502': 'WD', '503': 'WQ', '505': 'VQ', '506': 'CD', '507': 'CQ', 
+        '508': 'CQ', '509': 'CD', '510': 'CQ', '511': 'CD', '512': 'VQ', '513': 'AQ', '515': 'CD', '516': 'CQ',
+        # 6F
+        '601': 'WD', '602': 'WD', '603': 'WD', '605': 'VD', '606': 'DD', '607': 'ED', 
+        '608': 'DD', '609': 'ED', '611': 'ED', '612': 'VD', '613': 'AD', '615': 'DD', '616': 'ED',
+    }
+    
     def _get_room_type_name(self, code: str) -> str:
-        """將房型代碼轉換為中文名稱"""
+        """將房型代碼轉換為中文名稱（與 room_type_mapping.json 一致）"""
         mapping = {
-            'SD': '精緻雙人房',
-            'CD': '海景雙人房',
-            'CF': '海景四人房',
-            'SF': '精緻四人房',
-            'SU': '景觀套房',
-            'CU': '海景套房',
+            'AD': '無障礙雙人房',
+            'AQ': '無障礙四人房',
+            'CD': '經典雙人房',
+            'CQ': '經典四人房',
+            'DD': '豪華雙人房',
+            'ED': '行政雙人房',
+            'FM': '親子家庭房',
+            'SD': '標準雙人房',
+            'SQ': '標準四人房',
+            'ST': '標準三人房',
+            'VD': 'VIP雙人房',
+            'VQ': 'VIP四人房',
+            'WD': '海景雙人房',
+            'WQ': '海景四人房',
+            'PH': '閣樓房',
+            'FD': '家庭雙人房',
+            'FQ': '家庭四人房',
         }
         return mapping.get(code.strip().upper(), code or '未知房型')
+    
+    def _get_actual_room_type(self, room_numbers: list) -> dict:
+        """
+        從房號列表取得實際房型統計
+        用於已發生的日期（過去/今日）
+        """
+        stats = {}
+        for room_no in room_numbers:
+            rt_code = self.ROOM_TYPE_BY_NUMBER.get(str(room_no).strip(), '')
+            rt_name = self._get_room_type_name(rt_code)
+            stats[rt_name] = stats.get(rt_name, 0) + 1
+        return stats
     
     def _detect_booking_source(self, booking: dict) -> str:
         """偵測訂房來源"""
@@ -237,6 +275,8 @@ class InternalQueryHandler:
             
             # 判斷是過去還是未來，決定用詞
             today = datetime.now().date()
+            is_past_or_today = target_date.date() <= today
+            
             if target_date.date() < today:
                 time_label = "已住"
                 action_label = "已住"
@@ -269,11 +309,18 @@ class InternalQueryHandler:
                         rooms = len(room_numbers) if room_numbers else b.get('room_count', 1)
                         room_count += rooms
                         
-                        # 統計房型
-                        for room in b.get('rooms', []):
-                            rt_code = room.get('room_type_code', '').strip()
-                            rt_name = self._get_room_type_name(rt_code)
-                            room_type_stats[rt_name] = room_type_stats.get(rt_name, 0) + 1
+                        # 統計房型：過去/今日用實際房型，未來用訂單房型
+                        if is_past_or_today and room_numbers:
+                            # 已發生：用房號查實際房型
+                            actual_types = self._get_actual_room_type(room_numbers)
+                            for rt_name, count in actual_types.items():
+                                room_type_stats[rt_name] = room_type_stats.get(rt_name, 0) + count
+                        else:
+                            # 未發生：用訂單房型（計價房種）
+                            for room in b.get('rooms', []):
+                                rt_code = room.get('room_type_code', '').strip()
+                                rt_name = self._get_room_type_name(rt_code)
+                                room_type_stats[rt_name] = room_type_stats.get(rt_name, 0) + 1
                         
                         # 統計來源
                         source = self._detect_booking_source(b)
@@ -370,7 +417,13 @@ class InternalQueryHandler:
                         # 加總每筆訂單的房間數（優先用 room_numbers 長度）
                         for b in bookings:
                             room_numbers = b.get('room_numbers', [])
-                            room_count += len(room_numbers) if room_numbers else b.get('room_count', 1)
+                            if room_numbers:
+                                # 已分房：用 room_numbers 長度
+                                room_count += len(room_numbers)
+                            else:
+                                # 未分房（未來日期）：用 rooms 陣列長度
+                                rooms = b.get('rooms', [])
+                                room_count += len(rooms) if rooms else 1
                 except Exception as e:
                     print(f"⚠️ 查詢 {date_str} 失敗: {e}")
                 
@@ -453,7 +506,11 @@ class InternalQueryHandler:
                         booking_count = len(bookings)
                         for b in bookings:
                             room_numbers = b.get('room_numbers', [])
-                            room_count += len(room_numbers) if room_numbers else b.get('room_count', 1)
+                            if room_numbers:
+                                room_count += len(room_numbers)
+                            else:
+                                rooms_list = b.get('rooms', [])
+                                room_count += len(rooms_list) if rooms_list else 1
                 except Exception as e:
                     print(f"⚠️ 查詢 {date_str} 失敗: {e}")
                 
