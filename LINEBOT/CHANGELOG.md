@@ -71,12 +71,23 @@
 10:13:58 | ERROR | type=GEMINI_API | user=U45320f6... | message=...
 ```
 
+#### 6. 訂單未找到時暫存客人資料
+- **新增檔案**: `LINEBOT/helpers/pending_guest.py`
+- **功能**: 
+  - 訂單查不到時自動儲存客人提供的資料（電話、抵達時間等）
+  - 訂單查到時自動匹配暫存資料
+  - 7 天自動過期清理
+- **暫存資料**: `data/pending_guests.json`
+
 ### 📝 修改的文件
 - `pms-api/routes/bookings.js` (L846-930) - 查詢順序調整
-- `LINEBOT/bot.py` (L1511-1670) - Gmail 備援條件放寬、整合 Bot Logger
+- `pms-api/helpers/apiLogger.js` [NEW] - PMS API 伺服器端日誌（3 天清理）
+- `LINEBOT/bot.py` (L570-685) - Gmail 備援條件放寬、整合 Logger、暫存匹配
 - `LINEBOT/helpers/api_logger.py` [NEW] - API 日誌記錄器
 - `LINEBOT/helpers/pms_client.py` (L30-130) - 整合 API Logger
 - `LINEBOT/helpers/bot_logger.py` [NEW] - Bot 內部運作日誌（7 天自動清理）
+- `LINEBOT/helpers/pending_guest.py` [NEW] - 暫存客人資料管理器（7 天清理）
+- `docs/LOG_GUIDE.md` [NEW] - LOG 系統指南
 
 ---
 
