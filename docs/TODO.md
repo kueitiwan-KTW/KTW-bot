@@ -32,4 +32,27 @@
 
 ---
 
+### 【中優先】Gemini SDK 升級
+
+**需求描述**：
+- 目前使用舊版 SDK：`google-generativeai` v0.8.6
+- 官方已宣布棄用 (deprecated)，建議切換至 `google.genai`
+
+**升級影響**：
+- 需重構 `bot.py`、`web_search.py`、`vip_service_handler.py` 中的 import
+- 新 SDK 使用 `Client()` 模式，API 呼叫方式不同
+- 可解鎖新功能：`thinking_level` 參數控制
+
+**影響範圍**：
+- `LINEBOT/bot.py` - 主要 AI 調用
+- `LINEBOT/handlers/web_search.py` - 網路搜尋
+- `LINEBOT/handlers/vip_service_handler.py` - VIP 服務
+
+**參考文檔**：
+- https://ai.google.dev/gemini-api/docs/gemini-3
+
+**提出日期**：2025-12-21
+
+---
+
 *最後更新：2025-12-21*
