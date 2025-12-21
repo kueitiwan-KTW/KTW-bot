@@ -6,6 +6,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../config/database');
 const { STATUS_MAP, getStatusName, getRoomTotal, getDepositPaid, getRoomDetails, getRoomNumbers, getEffectiveStatus, getCheckinBookings } = require('../helpers/bookingHelpers');
+const logger = require('../helpers/apiLogger');  // API 日誌記錄器
 
 /**
  * GET /api/bookings/debug-order-time/:booking_id
@@ -837,9 +838,13 @@ router.patch('/same-day/:order_id/cancel', async (req, res) => {
  * 查詢單一訂單詳細資訊
  */
 router.get('/:booking_id', async (req, res) => {
-    try {
-        const { booking_id } = req.params;
+    const startTime = Date.now();
+    const { booking_id } = req.params;
 
+    // 記錄請求
+    logger.logRequest('GET', `/bookings/${booking_id}`);
+
+    try {
         const pool = db.getPool();
         const connection = await pool.getConnection();
 
@@ -847,7 +852,8 @@ router.get('/:booking_id', async (req, res) => {
             // 查詢訂單主檔 - 三層查詢策略（優先 OTA 訂單號）
             // ⭐ 1. 優先用 OTA 訂單號 (RVRESERVE_NOS) 模糊匹配
             //    客人通常提供 OTA 編號如 "1671721966"，需要匹配 "RMAG1671721966"
-            console.log(`🔍 查詢訂單: ${booking_id} (優先 OTA 模糊匹配)`);
+            const queryStart = Date.now();
+            logger.logDebug(`查詢訂單: ${booking_id} (優先 OTA 模糊匹配)`);
             let orderResult = await connection.execute(
                 `SELECT 
                TRIM(om.IKEY) as booking_id,
@@ -931,6 +937,11 @@ router.get('/:booking_id', async (req, res) => {
             }
 
             if (orderResult.rows.length === 0) {
+                // 記錄 404 回應
+                const elapsed = Date.now() - startTime;
+                logger.logResponse('GET', `/bookings/${booking_id}`, 404, elapsed);
+                logger.logInfo(`訂單未找到: ${booking_id}`);
+
                 return res.status(404).json({
                     success: false,
                     error: {
@@ -941,6 +952,8 @@ router.get('/:booking_id', async (req, res) => {
             }
 
             const order = orderResult.rows[0];
+            const queryElapsed = Date.now() - queryStart;
+            logger.logOracleQuery('FIND_ORDER', queryElapsed, 1);
 
             // 使用實際的 booking_id (IKEY) 查詢訂單明細
             const actual_booking_id = order[0]; // 使用返回的 IKEY，而非用戶輸入的編號
@@ -971,6 +984,11 @@ router.get('/:booking_id', async (req, res) => {
             // 使用統一的狀態判斷函數 (DRY)
             const { statusCode, statusName } = await getEffectiveStatus(connection, actual_booking_id, order[6]);
 
+            // 記錄成功回應
+            const elapsed = Date.now() - startTime;
+            logger.logResponse('GET', `/bookings/${booking_id}`, 200, elapsed);
+            logger.logInfo(`訂單查詢成功: ${actual_booking_id} (OTA: ${order[9] || 'N/A'})`);
+
             res.json({
                 success: true,
                 data: {
@@ -994,7 +1012,13 @@ router.get('/:booking_id', async (req, res) => {
         }
 
     } catch (err) {
+        const elapsed = Date.now() - startTime;
         console.error('查詢訂單詳情失敗：', err);
+
+        // 記錄 Oracle 錯誤
+        logger.logOracleError('QUERY_BOOKING', err.errorNum || 'UNKNOWN', err.message || String(err));
+        logger.logResponse('GET', `/bookings/${booking_id}`, 500, elapsed);
+
         res.status(500).json({
             success: false,
             error: {

@@ -20,8 +20,24 @@
 | 2 | OTA 精確匹配 | IKEY 精確匹配 |
 | 3 | 全模糊匹配 | IKEY 模糊匹配 |
 
-- **理由**: 客人通常提供 OTA 訂單號（如 `1671721966`），需優先匹配 `RMAG1671721966`
-- **新增日誌**: 每層查詢結果輸出到 console，方便調試
+### ✨ 新功能：API Logger (伺服器端日誌)
+
+- **新增檔案**: `helpers/apiLogger.js`
+- **功能**:
+  - 記錄所有 API 請求與回應
+  - 記錄 Oracle 查詢耗時
+  - 記錄 Oracle 錯誤詳情
+  - **3 天自動清理**
+- **日誌位置**: `logs/pms_api_YYYY-MM-DD.log`
+
+**日誌格式範例**:
+```
+10:24:58 | REQUEST | GET /bookings/1671721966
+10:24:58 | DEBUG | 查詢訂單: 1671721966 (優先 OTA 模糊匹配)
+10:24:58 | ORACLE | FIND_ORDER | elapsed=5ms | rows=1
+10:24:58 | RESPONSE | GET /bookings/1671721966 | status=200 | elapsed=60ms
+10:24:58 | INFO | 訂單查詢成功: 00703101 (OTA: RMAG1671721966)
+```
 
 ---
 
