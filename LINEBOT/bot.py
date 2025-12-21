@@ -12,6 +12,7 @@ import io
 
 # 從新的模組結構匯入
 from helpers import GoogleServices, GmailHelper, WeatherHelper, PMSClient
+from helpers.bot_logger import get_bot_logger  # Bot 內部運作日誌
 from handlers import HandlerRouter, OrderQueryHandler, AIConversationHandler, SameDayBookingHandler, ConversationStateMachine
 from chat_logger import ChatLogger
 
@@ -19,6 +20,10 @@ class HotelBot:
     def __init__(self, knowledge_base_path, persona_path):
         self.knowledge_base = self._load_json(knowledge_base_path)
         self.persona = self._load_text(persona_path)
+        
+        # Initialize Bot Logger (內部運作日誌)
+        self.bot_logger = get_bot_logger()
+        self.bot_logger.log_info("HotelBot 初始化開始")
         
         # Initialize Google Services
         self.google_services = GoogleServices()
@@ -36,7 +41,7 @@ class HotelBot:
         # Initialize Same Day Booking Handler
         self.same_day_handler = SameDayBookingHandler(self.pms_client, self.state_machine)
         
-        # Initialize Logger
+        # Initialize Logger (對話記錄)
         self.logger = ChatLogger()
         
         # Initialize Order Query Handler（訂單查詢處理器）
@@ -1507,11 +1512,14 @@ STEP 2: ONLY AFTER showing all above details, then add weather and contact.
         # 設定當前用戶 ID，供工具函數使用
         self.current_user_id = user_id
         
+        # 記錄收到訊息 (Bot 內部 LOG)
+        self.bot_logger.log_receive(user_id, "text", user_question)
+        
         # Save profile if provided
         if display_name:
             self.logger.save_profile(user_id, display_name)
 
-        # Log User Input
+        # Log User Input (對話記錄)
         self.logger.log(user_id, "User", user_question)
 
         # ============================================
@@ -1604,6 +1612,11 @@ STEP 2: ONLY AFTER showing all above details, then add weather and contact.
             if hasattr(response, 'parts'):
                 for part in response.parts:
                     if hasattr(part, 'function_call') and part.function_call:
+                        # 記錄工具調用 (Bot 內部 LOG)
+                        tool_name = part.function_call.name
+                        tool_args = dict(part.function_call.args) if part.function_call.args else {}
+                        self.bot_logger.log_tool_call(tool_name, tool_args)
+                        
                         if part.function_call.name == 'check_order_status':
                             # Extract order_id from function call
                             order_id_arg = part.function_call.args.get('order_id', '')
@@ -1624,7 +1637,10 @@ STEP 2: ONLY AFTER showing all above details, then add weather and contact.
             
             reply_text = response.text
             
-            # Log Bot Response
+            # 記錄 Bot 回應 (Bot 內部 LOG)
+            self.bot_logger.log_response(user_id, reply_text)
+            
+            # Log Bot Response (對話記錄)
             self.logger.log(user_id, "Bot", reply_text)
             
             return reply_text
@@ -1634,7 +1650,10 @@ STEP 2: ONLY AFTER showing all above details, then add weather and contact.
             print(f"❌ Gemini API Error: {e}")
             print(f"📋 Full Error Traceback:\n{error_details}")
             
-            # 記錄錯誤到 LOG (供管理員除錯,但不發送給客戶)
+            # 記錄錯誤 (Bot 內部 LOG)
+            self.bot_logger.log_error("GEMINI_API", str(e)[:200], user_id)
+            
+            # 記錄錯誤到對話 LOG (供管理員除錯,但不發送給客戶)
             error_log = f"[系統錯誤] Gemini API 異常: {str(e)[:200]}"
             self.logger.log(user_id, "System Error", error_log)
             

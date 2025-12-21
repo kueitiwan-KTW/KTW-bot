@@ -54,11 +54,29 @@
   - 記錄查詢耗時、HTTP 狀態碼、錯誤類型
   - 新增 `user_id` 參數供日誌識別用戶
 
+#### 5. 新增 Bot 內部運作日誌
+- **新增檔案**: `LINEBOT/helpers/bot_logger.py`
+- **功能**: 
+  - 記錄 Bot 所有內部動作（收訊息、意圖判斷、工具調用、回應、錯誤）
+  - 自動清理 7 天前的 LOG
+  - 日誌存放於 `data/bot_logs/bot_YYYY-MM-DD.log`
+
+**日誌格式範例**:
+```
+10:13:58 | RECEIVE | user=U45320f6... | type=text | content="我要查訂單 1671721966"
+10:13:58 | INTENT | detected=order_query | confidence=0.95
+10:13:58 | TOOL_CALL | tool=check_order_status | params={order_id=1671721966}
+10:13:58 | TOOL_RESULT | tool=check_order_status | status=success
+10:13:58 | RESPONSE | user=U45320f6... | text="您的訂單已找到..."
+10:13:58 | ERROR | type=GEMINI_API | user=U45320f6... | message=...
+```
+
 ### 📝 修改的文件
 - `pms-api/routes/bookings.js` (L846-930) - 查詢順序調整
-- `LINEBOT/bot.py` (L555-561) - Gmail 備援條件放寬
+- `LINEBOT/bot.py` (L1511-1670) - Gmail 備援條件放寬、整合 Bot Logger
 - `LINEBOT/helpers/api_logger.py` [NEW] - API 日誌記錄器
 - `LINEBOT/helpers/pms_client.py` (L30-130) - 整合 API Logger
+- `LINEBOT/helpers/bot_logger.py` [NEW] - Bot 內部運作日誌（7 天自動清理）
 
 ---
 
