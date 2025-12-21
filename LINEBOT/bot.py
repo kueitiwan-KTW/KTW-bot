@@ -730,7 +730,11 @@ Your Knowledge Base (FAQ):
                 
                 # OTA 订单号（优先显示，如果没有则显示 PMS 订单号）
                 ota_id = order_data.get('ota_booking_id', '')
-                display_order_id = ota_id if ota_id else order_data['booking_id']
+                
+                # ✨ 去掉 OTA 前綴（RMAG, RMPGP, RM 等），只顯示純數字
+                import re
+                clean_ota_id = re.sub(r'^[A-Z]+', '', ota_id) if ota_id else ''
+                display_order_id = clean_ota_id if clean_ota_id else order_data['booking_id']
                 
                 # 订房来源（優先從備註判斷，其次才用 OTA ID）
                 booking_source = "未知"
@@ -819,8 +823,8 @@ Your Knowledge Base (FAQ):
                             break
                     
                     # 組合顯示訊息
-                    # 只顯示 OTA 編號 (ota_id)，如果沒有則回退到 booking_id
-                    display_id = ota_id if ota_id else order_data.get('booking_id', '未知')
+                    # 只顯示 OTA 編號 (去掉前綴)，如果沒有則回退到 booking_id
+                    display_id = clean_ota_id if clean_ota_id else order_data.get('booking_id', '未知')
                     
                     # 電話格式化：移除國際電話前綴並提取台灣手機號碼
                     raw_phone = order_data.get('contact_phone', '')
