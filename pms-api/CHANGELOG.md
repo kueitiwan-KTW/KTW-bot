@@ -4,6 +4,46 @@
 
 ---
 
+## [1.9.2] - 2025-12-21
+
+### ✨ 新功能：遠端 LOG 讀取 API
+
+> **背景**：為方便遠端查看伺服器日誌，新增 LOG 讀取 API 端點。
+
+#### 新增檔案
+- **`routes/logs.js`** - LOG 讀取路由
+
+#### 新增端點
+
+| 端點 | 說明 |
+|:-----|:-----|
+| `GET /api/logs` | 列出所有可用的 LOG 檔案 |
+| `GET /api/logs/today` | 取得今日 LOG 內容 |
+| `GET /api/logs/:date` | 取得指定日期 LOG (YYYY-MM-DD) |
+
+#### 查詢參數
+
+| 參數 | 說明 | 範例 |
+|:-----|:-----|:-----|
+| `tail=N` | 只取最後 N 行 | `?tail=50` |
+| `level=X` | 過濾等級 (ERROR, ORACLE, REQUEST...) | `?level=ERROR` |
+| `search=X` | 搜尋關鍵字 | `?search=booking` |
+
+#### 修改檔案
+- **`server.js`** (L20, L26, L32) - 註冊 logs 路由
+- **`server.js`** (L47) - API 版本號更新為 1.8
+
+**使用範例**:
+```bash
+# 取得今日最後 20 行 LOG
+curl "http://192.168.8.3:3000/api/logs/today?tail=20"
+
+# 只看錯誤
+curl "http://192.168.8.3:3000/api/logs/today?level=ERROR"
+```
+
+---
+
 ## [1.9.1] - 2025-12-21
 
 ### 🐛 Bug 修復：OTA 訂單查詢順序調整
