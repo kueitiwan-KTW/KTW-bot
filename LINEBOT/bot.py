@@ -827,10 +827,22 @@ Your Knowledge Base (FAQ):
                     display_id = clean_ota_id if clean_ota_id else order_data.get('booking_id', '未知')
                     
                     # 電話格式化：移除國際電話前綴並提取台灣手機號碼
-                    raw_phone = order_data.get('contact_phone', '')
+                    raw_phone = order_data.get('contact_phone', '') or ''
                     import re
+                    
+                    # ✨ 優化電話提取邏輯：
+                    # 1. 先找 09 開頭的手機號碼 (10碼)
                     phone_match = re.search(r'(09\d{8})', raw_phone)
-                    formatted_phone = phone_match.group(1) if phone_match else raw_phone
+                    if phone_match:
+                        formatted_phone = phone_match.group(1)
+                    else:
+                        # 2. 提取所有數字，取最後 9 碼加上 0
+                        # 處理 886886933912773 → 0933912773
+                        digits = re.sub(r'\D', '', raw_phone)
+                        if len(digits) >= 9:
+                            formatted_phone = '0' + digits[-9:]
+                        else:
+                            formatted_phone = raw_phone  # 保持原樣
                     
                     clean_body = f"""
                 訂單來源: {booking_source}
