@@ -4,6 +4,7 @@
 """
 
 import re
+from datetime import datetime
 from typing import Optional, Dict, Any, List
 
 # 房型對照表 (SSOT)
@@ -188,3 +189,169 @@ def sync_order_details(order_id: str, data: Dict[str, Any], logger: Any, pms_cli
         return False
 
 
+# =====================
+# 時間格式驗證相關方法
+# =====================
+
+# 中文數字對照表
+CHINESE_NUMERALS = {
+    '零': '0', '〇': '0', '一': '1', '二': '2', '兩': '2',
+    '三': '3', '四': '4', '五': '5', '六': '6', '七': '7',
+    '八': '8', '九': '9', '十': '10', '十一': '11', '十二': '12'
+}
+
+def convert_chinese_numerals(text: str) -> str:
+    """
+    將中文數字轉換為阿拉伯數字
+    
+    Examples:
+        >>> convert_chinese_numerals("下午三點")
+        "下午3點"
+        
+        >>> convert_chinese_numerals("晚上七點半")
+        "晚上7點半"
+        
+        >>> convert_chinese_numerals("十二點")
+        "12點"
+    """
+    result = text
+    
+    # 先處理 "十X" 格式（如 十一→11, 十二→12）
+    for cn, ar in [('十二', '12'), ('十一', '11'), ('十', '10')]:
+        result = result.replace(cn, ar)
+    
+    # 再處理單個中文數字
+    for cn, ar in CHINESE_NUMERALS.items():
+        if cn not in ['十', '十一', '十二']:  # 避免重複處理
+            result = result.replace(cn, ar)
+    
+    return result
+
+def is_valid_time_format(time_str: str) -> bool:
+    """
+    檢查是否為有效的時間格式
+    
+    支援格式：
+    - 時間關鍵字：點、時、:、上午、下午、中午、晚上、傍晚、早上
+    - 數字時間：14:00、15:30
+    - 相對時間：等一下、馬上、待會
+    
+    不接受：
+    - 純數字（可能是訂單編號）：250277285
+    - 日期格式：12/25、2025-01-01
+    
+    Args:
+        time_str: 用戶輸入的時間字串
+        
+    Returns:
+        True 如果是有效的時間格式
+    """
+    # 清理輸入
+    clean = time_str.strip()
+    
+    # 排除：純數字（8 位以上可能是訂單編號）
+    digits_only = re.sub(r'\D', '', clean)
+    if digits_only and len(digits_only) >= 8:
+        return False
+    
+    # 排除：日期格式
+    if re.search(r'\d{1,2}/\d{1,2}', clean) or re.search(r'\d{4}-\d{2}-\d{2}', clean):
+        return False
+    
+    # 時間關鍵字白名單（先用原始訊息匹配，避免「等一下」變「等1下」）
+    time_keywords = [
+        '點', '時', ':', 
+        '上午', '下午', '中午', '晚上', '傍晚', '早上', '凌晨',
+        '等一下', '等下', '馬上', '待會', '稀候', '稍後', '現在',
+        '左右', '前後', '大約', '約'
+    ]
+    
+    # 先用原始訊息匹配
+    if any(kw in clean for kw in time_keywords):
+        return True
+    
+    # 再轉換中文數字後匹配（處理「三點」變「3點」）
+    normalized = convert_chinese_numerals(clean)
+    if any(kw in normalized for kw in time_keywords):
+        return True
+    
+    # 檢查 24 小時格式：14:00、3:30
+    if re.search(r'\d{1,2}:\d{2}', normalized):
+        return True
+    
+    return False
+
+def validate_arrival_time(time_str: str) -> Optional[str]:
+    """
+    驗證並標準化抵達時間
+    
+    流程：
+    1. 檢查是否為訂單編號（誤判）→ 返回 None
+    2. 檢查是否為有效時間格式 → 返回標準化的時間
+    
+    Args:
+        time_str: 用戶輸入的時間字串
+        
+    Returns:
+        標準化後的時間字串，None 表示無效（不是時間）
+        
+    Examples:
+        >>> validate_arrival_time("下午三點")
+        "下午3點"  # 中文轉阿拉伯數字
+        
+        >>> validate_arrival_time("250277285")
+        None  # 這是訂單號，不是時間
+        
+        >>> validate_arrival_time("14:00")
+        "14:00"
+    """
+    if not time_str:
+        return None
+    
+    # 1. 檢查是否為有效時間格式
+    if not is_valid_time_format(time_str):
+        return None
+    
+    # 2. 標準化：轉換中文數字
+    normalized = convert_chinese_numerals(time_str.strip())
+    
+    # 3. 清理多餘空白
+    normalized = ' '.join(normalized.split())
+    
+    return normalized
+
+def is_vague_time(time_str: str) -> bool:
+    """
+    檢查時間是否模糊（需要進一步確認具體時間）
+    
+    模糊時間範例：下午、晚上、傍晚（沒有具體幾點）
+    具體時間範例：下午3點、晚上7點、14:00
+    
+    Args:
+        time_str: 用戶輸入的時間字串
+        
+    Returns:
+        True 如果時間模糊，需要追問具體時間
+    """
+    if not time_str:
+        return True
+    
+    # 先標準化
+    normalized = convert_chinese_numerals(time_str)
+    
+    # 模糊關鍵字（只有時段，沒有具體時間）
+    vague_keywords = ['下午', '上午', '晚上', '傍晚', '早上', '中午', '凌晨']
+    
+    # 具體時間指標
+    specific_indicators = ['點', '時', ':']
+    
+    # 如果有模糊關鍵字但沒有具體時間指標 → 模糊
+    has_vague = any(kw in normalized for kw in vague_keywords)
+    has_specific = any(ind in normalized for ind in specific_indicators)
+    
+    # 特殊情況：「等一下」「馬上」「待會」視為具體（表示很快到）
+    soon_keywords = ['等一下', '馬上', '待會', '稍後', '現在', '快到']
+    if any(kw in normalized for kw in soon_keywords):
+        return False
+    
+    return has_vague and not has_specific

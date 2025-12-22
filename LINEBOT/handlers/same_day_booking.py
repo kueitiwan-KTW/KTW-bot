@@ -8,6 +8,10 @@ from typing import Optional, Dict, Any
 import json
 import os
 
+# 引入共用 Helper
+from helpers.intent_detector import IntentDetector
+from helpers.order_helper import validate_arrival_time, is_vague_time
+
 
 class SameDayBookingHandler:
     """

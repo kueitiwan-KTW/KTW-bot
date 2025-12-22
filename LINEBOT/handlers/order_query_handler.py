@@ -10,8 +10,9 @@ from .base_handler import BaseHandler
 from helpers.order_helper import (
     ROOM_TYPES, normalize_phone, clean_ota_id, 
     detect_booking_source, get_breakfast_info, get_resume_message,
-    sync_order_details
+    sync_order_details, validate_arrival_time, is_vague_time
 )
+from helpers.intent_detector import IntentDetector
 
 
 class OrderQueryHandler(BaseHandler):
@@ -329,24 +330,33 @@ class OrderQueryHandler(BaseHandler):
         return '\n'.join(lines)
     
     def _handle_order_confirmation(self, user_id: str, message: str) -> str:
-        """處理訂單確認"""
+        """處理訂單確認（增強版：加入特殊需求偵測）"""
         session = self.get_session(user_id)
         message_lower = message.lower().strip()
         
-        # 確認關鍵字
-        confirm_keywords = ['是', '對', '正確', 'yes', '沒錯', '對的', '確認']
-        deny_keywords = ['不是', '不對', '錯', 'no', '否', '重新', '再查']
-        
-        if any(kw in message_lower for kw in confirm_keywords):
-            # 確認正確，開始收集資訊
+        # 1. 確認關鍵字
+        if IntentDetector.is_confirmation(message):
             return self._start_collecting_info(user_id)
         
-        elif any(kw in message_lower for kw in deny_keywords):
-            # 不是這筆訂單
+        # 2. 否定關鍵字
+        if IntentDetector.is_rejection(message):
             self.clear_session(user_id)
             return "好的，請重新提供正確的訂單編號。"
         
-        # 如果收到新的訂單編號
+        # 3. ✨ 特殊需求偵測（新增）
+        if IntentDetector.is_special_request(message):
+            special_req = IntentDetector.extract_special_request(message)
+            if special_req:
+                # 儲存需求
+                if 'special_requests' not in session:
+                    session['special_requests'] = []
+                session['special_requests'].append(special_req)
+                self._save_guest_info(user_id, 'special_need', special_req)
+                return f"""好的，已為您記錄：{special_req}
+
+請問這是您的訂單嗎？請回覆「是」或「不是」。"""
+        
+        # 4. 新訂單編號偵測
         new_order_id = self._extract_order_number(message)
         if new_order_id:
             return self._query_order(user_id, new_order_id)
@@ -374,17 +384,33 @@ class OrderQueryHandler(BaseHandler):
 請問方便提供您的聯絡電話嗎？"""
     
     def _handle_phone_collection(self, user_id: str, message: str) -> str:
-        """處理電話收集"""
+        """處理電話收集（增強版：AI + Helper 雙層驗證）"""
         session = self.get_session(user_id)
+        current_order = session.get('order_id')
         
-        # 提取電話號碼
-        phone = self._extract_phone(message)
+        # 1️⃣ 先檢查是否為新訂單意圖（優先級更高）
+        if IntentDetector.is_new_order_query(message, current_order):
+            new_order = IntentDetector.extract_order_number(message)
+            # 設定延遲跳轉意圖
+            self.state_machine.set_pending_intent(user_id, 'order_query', new_order)
+            return f"""偵測到另一筆訂單（{new_order}），稍後為您查詢。
+
+請先提供本筆訂單的聯絡電話。"""
+        
+        # 2️⃣ 檢查是否為可能的訂單編號（純數字但非 0 開頭）
+        if IntentDetector.is_possible_order_number(message):
+            # 主動確認意圖
+            return f"""請問「{message}」是您的電話號碼，還是另一筆訂單編號呢？
+
+如果是電話，請確認後重新輸入。
+如果是訂單編號，請回覆「訂單」。"""
+        
+        # 3️⃣ 提取電話號碼（使用嚴格模式）
+        phone = IntentDetector.extract_phone_number(message, strict=True)
         
         if phone:
             session['phone'] = phone
             self.state_machine.transition(user_id, self.state_machine.STATE_ORDER_QUERY_COLLECTING_ARRIVAL, {'phone': phone})
-            
-            # 儲存到資料庫
             self._save_guest_info(user_id, 'phone', phone)
             
             return f"""好的，已記錄您的電話: {phone}
@@ -394,25 +420,40 @@ class OrderQueryHandler(BaseHandler):
             return "請提供有效的手機號碼（例如：0912345678）"
     
     def _handle_arrival_collection(self, user_id: str, message: str) -> str:
-        """處理抵達時間收集"""
+        """處理抵達時間收集（增強版：加入格式驗證與新訂單偵測）"""
         session = self.get_session(user_id)
+        current_order = session.get('order_id')
         
-        # 儲存抵達時間
-        session['arrival_time'] = message
-        self._save_guest_info(user_id, 'arrival_time', message)
+        # 1️⃣ 檢查是否為新訂單意圖
+        if IntentDetector.is_new_order_query(message, current_order):
+            new_order = IntentDetector.extract_order_number(message)
+            self.state_machine.set_pending_intent(user_id, 'order_query', new_order)
+            return f"""偵測到另一筆訂單（{new_order}），稍後為您查詢。
+
+請先告訴我本筆訂單的抵達時間。"""
         
-        # 檢查時間是否明確
-        if self._is_vague_time(message):
-            return f"""好的，了解您大約{message}會抵達。
+        # 2️⃣ 驗證時間格式（使用新的 Helper）
+        validated_time = validate_arrival_time(message)
+        
+        if validated_time:
+            session['arrival_time'] = validated_time
+            self._save_guest_info(user_id, 'arrival_time', validated_time)
+            
+            # 檢查時間是否模糊（使用新的 Helper）
+            if is_vague_time(validated_time):
+                return f"""好的，了解您大約{validated_time}會抵達。
 
 為了更準確安排，請問大約是幾點呢？（例如：下午2點、3點左右）"""
-        
-        self.state_machine.transition(user_id, self.state_machine.STATE_ORDER_QUERY_COLLECTING_SPECIAL, {'arrival_time': message})
-        return """好的，已記錄您的抵達時間！
+            
+            self.state_machine.transition(user_id, self.state_machine.STATE_ORDER_QUERY_COLLECTING_SPECIAL, {'arrival_time': validated_time})
+            return """好的，已記錄您的抵達時間！
 
 請問有什麼特殊需求嗎？（例如：嬰兒床、消毒鍋、嬰兒澡盆、高樓層、禁菸房等）
 
 如果沒有特殊需求，請回覆「沒有」。"""
+        else:
+            # 時間格式無效（可能是訂單編號被誤輸入）
+            return "請提供有效的抵達時間（例如：下午3點、晚上7點）"
     
     def _handle_special_requests(self, user_id: str, message: str) -> str:
         """處理特殊需求"""

@@ -11,6 +11,17 @@
 
 ---
 
+## [1.9.8] - 2025-12-22
+### ✨ 訂單查詢系統優化 Phase 1
+- **LINE Bot**: 實作「AI + Helper 雙層驗證」架構，解決訂單編號被誤判為電話/時間的問題
+- **新增 Helper**: `IntentDetector`（6 個方法）、`order_helper`（4 個時間方法）
+- **重構 Handler**: `OrderQueryHandler` 整合新 Helper，提升意圖判斷準確度
+
+#### 詳細模組變更
+- [LINE Bot (v1.9.8)](./LINEBOT/CHANGELOG.md#198---2025-12-22) - Phase 1 完整說明
+
+---
+
 ## [1.9.6] - 2025-12-21
 ### ✨ 修正查無訂單時住客資料同步失效
 - **LINE Bot**: 實作查詢失敗時的強制同步邏輯，確保 LINE 姓名與需求能正確傳遞至後端。
