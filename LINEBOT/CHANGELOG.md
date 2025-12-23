@@ -4,6 +4,40 @@
 
 ---
 
+## [2.0.0] - 2025-12-23
+
+### ✨ 漸進式暫存功能
+
+**背景**：當日預訂流程中，若客人中途離開，之前的資訊會遺失。
+
+**新增功能**：
+- **意圖確認即暫存**：`check_today_availability` 調用時，立刻暫存 LINE ID 和顯示名稱
+- **LINE ID 核對**：PMS-API 用 `line_user_id` 核對，避免重複訂單
+
+**修改檔案**：
+- `bot.py` (L270-292)：check_today_availability 加入漸進式暫存
+- `bot.py` (L355-371)：create_same_day_booking 傳遞 pending_order_id
+- `handlers/same_day_booking.py` (L1615-1626, L1673-1687)：接收並使用 order_id
+- `helpers/pms_client.py` (L366-371)：新增 get_user_incomplete_booking
+
+### 🗣️ 對話簡潔原則
+
+**新增指示**（System Prompt）：
+- 當日預訂流程中，一次只問一個問題
+- 回覆簡短扼要，不要重複已知資訊
+
+**修改檔案**：
+- `prompts/system_prompt.py` (L40-52)：新增對話簡潔原則
+
+### ⚠️ 當日預訂專用提醒
+
+**新增**：當日預訂成功後，AI 必須包含專用提醒（免訂金、準時抵達、LINE 告知變更）
+
+**修改檔案**：
+- `prompts/system_prompt.py` (L54-63)：新增當日預訂成功後專用提醒格式
+
+---
+
 ## [1.9.9] - 2025-12-22
 
 ### 🔧 Bot 模組化重構

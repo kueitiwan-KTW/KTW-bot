@@ -11,6 +11,19 @@
 
 ---
 
+## [2.0.0] - 2025-12-23
+### ✨ 漸進式暫存 + 對話簡潔原則 + 當日預訂專用提醒
+- **LINE Bot (v2.0.0)**: 當日預訂意圖確認即暫存、對話簡潔原則、成功後專用提醒
+- **PMS API (v1.9.3)**: incomplete 狀態跳過驗證、LINE ID 核對避免重複
+- **Admin Web (v1.3.1)**: mismatch 取消按鈕修復、顯示 LINE 姓名
+
+#### 詳細模組變更
+- [LINE Bot (v2.0.0)](./LINEBOT/CHANGELOG.md#200---2025-12-23)
+- [PMS API (v1.9.3)](./pms-api/CHANGELOG.md#193---2025-12-23)
+- [Admin Web (v1.3.1)](./KTW-admin-web/CHANGELOG.md#v131-2025-12-23)
+
+---
+
 ## [1.9.9] - 2025-12-22
 ### 🔧 Bot 模組化重構
 - **LINE Bot**: `bot.py` 從 1821 行減至 817 行（-55%）

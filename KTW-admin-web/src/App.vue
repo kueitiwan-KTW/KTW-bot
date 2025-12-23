@@ -309,7 +309,7 @@ async function markAllAsKeyed(group) {
 
 // 批次取消所有房型
 async function cancelAllBookings(group) {
-  const pendingItems = group.items.filter(i => i.status === 'pending' || i.status === 'interrupted')
+  const pendingItems = group.items.filter(i => i.status === 'pending' || i.status === 'interrupted' || i.status === 'mismatch')
   if (pendingItems.length === 0) return
   
   if (!confirm(`確定要取消此訂單的所有 ${pendingItems.length} 間房嗎？`)) return
