@@ -351,6 +351,17 @@ class OrderQueryHandler(BaseHandler):
         session = self.get_session(user_id)
         current_order = session.get('order_id')
         
+        # 0️⃣ 檢查是否為確認電話正確（對、是、正確等）
+        if IntentDetector.is_confirmation(message):
+            # 客人確認現有電話正確，進入下一步
+            existing_phone = session.get('phone')
+            if existing_phone:
+                self.state_machine.transition(user_id, self.state_machine.STATE_ORDER_QUERY_COLLECTING_ARRIVAL, {'phone': existing_phone})
+                self._save_guest_info(user_id, 'phone', existing_phone)
+                return """好的，電話確認完成！
+
+請問您預計幾點抵達呢？（例如：下午3點、晚上7點）"""
+        
         # 1️⃣ 先檢查是否為新訂單意圖（優先級更高）
         if IntentDetector.is_new_order_query(message, current_order):
             new_order = IntentDetector.extract_order_number(message)
