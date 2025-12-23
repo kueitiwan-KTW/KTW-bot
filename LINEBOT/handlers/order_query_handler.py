@@ -722,13 +722,18 @@ class OrderQueryHandler(BaseHandler):
         # 7️⃣ 已確認，回傳完整資訊
         formatted = self._format_order_details(order_data)
         
-        # 同步客人資料到 Backend（LINE 姓名、user_id 關聯）
+        # 同步客人資料到 Backend（包含完整訂單資訊）
         try:
             sync_order_details(
                 order_id=pms_id,
                 data={
+                    "guest_name": order_data.get('guest_name'),
+                    "check_in": order_data.get('check_in'),
+                    "check_out": order_data.get('check_out'),
+                    "room_type": order_data.get('room_type'),
+                    "booking_source": order_data.get('booking_source'),
                     "line_user_id": user_id,
-                    "line_display_name": display_name
+                    "display_name": display_name
                 },
                 logger=self.logger,
                 pms_client=self.pms_client,
