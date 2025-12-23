@@ -280,7 +280,7 @@ def smart_batch_upload(limit=None):
     print('🚀 智能合併批量上傳（專案分組模式）\n')
     
     # 1. 掃描檔案
-    files = find_important_files('/Users/ktw/KTW-bot')
+    files = find_important_files('/Users/ktw/ktw-projects/KTW-bot')
     
     # 2. 智能分類檔案
     merged_groups, standalone_files = categorize_files(files)

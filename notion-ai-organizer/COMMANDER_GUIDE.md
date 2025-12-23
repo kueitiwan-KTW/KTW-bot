@@ -17,7 +17,7 @@
 ### 1. 掃描所有頁面的留言
 
 ```bash
-cd /Users/ktw/KTW-bot/notion-ai-organizer
+cd /Users/ktw/ktw-projects/KTW-bot/notion-ai-organizer
 python3 notion_commander.py --scan --preview
 ```
 

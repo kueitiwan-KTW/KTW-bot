@@ -121,7 +121,7 @@ AI：請問哪天入住？
 ## 🔧 檔案結構
 
 ```
-/Users/ktw/KTW-bot/
+/Users/ktw/ktw-projects/KTW-bot/
 ├── bot.py                 # 主程式（AI對話、訂單查詢）
 ├── same_day_booking.py    # 當日預訂模組
 ├── pms_client.py          # PMS API 客戶端

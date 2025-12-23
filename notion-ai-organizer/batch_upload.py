@@ -160,7 +160,7 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description='批量上傳專案檔案到 Notion')
-    parser.add_argument('--project-dir', default='/Users/ktw/KTW-bot', help='專案目錄')
+    parser.add_argument('--project-dir', default='/Users/ktw/ktw-projects/KTW-bot', help='專案目錄')
     parser.add_argument('--limit', type=int, help='限制處理數量（測試用）')
     parser.add_argument('--dry-run', action='store_true', help='試運行（不實際上傳）')
     

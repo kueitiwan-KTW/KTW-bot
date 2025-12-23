@@ -49,7 +49,7 @@
 | [oracle_access_guide.md](file:///Users/ktw/.gemini/antigravity/brain/4673da49-130a-4d10-bbd1-466a008cfa73/oracle_access_guide.md) | Oracle 存取指南 | ✅ |
 | [oracle_connection_steps.md](file:///Users/ktw/.gemini/antigravity/brain/4673da49-130a-4d10-bbd1-466a008cfa73/oracle_connection_steps.md) | Oracle 連線步驟 | ✅ |
 | [oracle_sql_commands.md](file:///Users/ktw/.gemini/antigravity/brain/4673da49-130a-4d10-bbd1-466a008cfa73/oracle_sql_commands.md) | SQL 探索指令集 | ✅ |
-| [PMS-DATABASE-REFERENCE.md](file:///Users/ktw/KTW-bot/pms-api/PMS-DATABASE-REFERENCE.md) | 資料庫參考文件 | ✅ |
+| [PMS-DATABASE-REFERENCE.md](file:///Users/ktw/ktw-projects/KTW-bot/pms-api/PMS-DATABASE-REFERENCE.md) | 資料庫參考文件 | ✅ |
 | [pms_api_specification.md](file:///Users/ktw/.gemini/antigravity/brain/4673da49-130a-4d10-bbd1-466a008cfa73/pms_api_specification.md) | **REST API 完整規格** | ✅ |
 | [bot_pms_integration_plan.md](file:///Users/ktw/.gemini/antigravity/brain/4673da49-130a-4d10-bbd1-466a008cfa73/bot_pms_integration_plan.md) | BOT 整合方案分析 | ✅ |
 

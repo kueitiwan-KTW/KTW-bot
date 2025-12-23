@@ -1,9 +1,9 @@
 # 版本變更記錄（合併範例）
 
 > 📌 **來源檔案**：
-> - `/Users/ktw/KTW-bot/CHANGELOG.md`
-> - `/Users/ktw/KTW-bot/pms-api/CHANGELOG.md`
-> - `/Users/ktw/KTW-bot/pms-api-poc/API_CHANGELOG.md`
+> - `/Users/ktw/ktw-projects/KTW-bot/CHANGELOG.md`
+> - `/Users/ktw/ktw-projects/KTW-bot/pms-api/CHANGELOG.md`
+> - `/Users/ktw/ktw-projects/KTW-bot/pms-api-poc/API_CHANGELOG.md`
 
 ---
 
