@@ -1,0 +1,4 @@
+# Bot 依賴
+Flask>=2.0.0
+line-bot-sdk>=2.0.0
+google-generativeai>=0.3.0
