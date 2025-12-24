@@ -7,7 +7,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import dotenv from 'dotenv';
-import { getSupplement, getAllSupplements, updateSupplement, getBotSession, updateBotSession, deleteBotSession, getAllVipUsers, getVipUser, addVipUser, deleteVipUser, saveUserOrderLink, getUserOrders, getUserLatestOrder } from './helpers/db.js';
+import { getSupplement, getAllSupplements, updateSupplement, getBotSession, updateBotSession, deleteBotSession, getAllActiveSessions, getAllVipUsers, getVipUser, addVipUser, deleteVipUser, saveUserOrderLink, getUserOrders, getUserLatestOrder } from './helpers/db.js';
 import { getBookingSource } from './helpers/bookingSource.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -89,6 +89,25 @@ function matchGuestOrder(booking, guestOrders) {
 
 // 🔄 共用的訂單資料處理函數（供今日/昨日/明日 API 使用）
 async function processBookings(bookings, guestOrders, profiles = {}) {
+    // 🔧 新增：查詢進行中的 Bot Sessions（即使流程卡住也能顯示資料）
+    let activeSessions = [];
+    try {
+        activeSessions = await getAllActiveSessions();
+    } catch (err) {
+        console.error('查詢進行中 sessions 失敗:', err.message);
+    }
+    // 建立 session map（以 order_id 為 key）
+    const sessionMap = {};
+    activeSessions.forEach(session => {
+        const orderId = session.data?.order_id;
+        if (orderId) {
+            sessionMap[orderId] = session.data;
+            // 也用純數字版本建立索引
+            const cleanId = orderId.replace(/^[A-Z]+/, '');
+            if (cleanId !== orderId) sessionMap[cleanId] = session.data;
+        }
+    });
+
     // 取得所有訂單 ID 用於批次查詢 SQLite（包含 PMS ID 和 OTA ID）
     const allIds = [];
     bookings.forEach(b => {
@@ -138,6 +157,9 @@ async function processBookings(bookings, guestOrders, profiles = {}) {
 
         // 6. 整合 Bot 與 SQLite 資料
         const botInfo = matchGuestOrder(booking, guestOrders);
+        // 🔧 新增：也查詢進行中的 Session（即使流程卡住也能顯示）
+        const sessionInfo = sessionMap[booking.ota_booking_id?.replace(/^[A-Z]+/, '')]
+            || sessionMap[booking.booking_id];
         // 🔧 雙重匹配：OTA ID → 純數字 OTA → PMS ID 順序查詢
         const cleanOta = (booking.ota_booking_id || '').replace(/^[A-Z]+/, '');
         const supplement = supplementMap[booking.ota_booking_id]  // 1. 完整 OTA ID
@@ -168,6 +190,7 @@ async function processBookings(bookings, guestOrders, profiles = {}) {
         const balanceDue = needsPayment ? Math.max(0, roomTotal - depositPaid) : 0;
 
         // 9. 回傳結果
+        // 優先級: SQLite supplement > 進行中 Session > guest_orders.json > PMS
         const result = {
             booking_id: displayOrderId,
             pms_id: booking.booking_id,
@@ -175,8 +198,8 @@ async function processBookings(bookings, guestOrders, profiles = {}) {
             guest_name: fullName,
             registered_name: booking.registered_name || null,
             customer_remarks: booking.customer_remarks || null,
-            contact_phone: supplement?.confirmed_phone || botInfo?.phone || formattedPhone, // 優先級: SQLite > Bot > PMS
-            phone_from_bot: !!(supplement?.confirmed_phone || botInfo?.phone), // 標識是否來自 Bot
+            contact_phone: supplement?.confirmed_phone || sessionInfo?.phone || botInfo?.phone || formattedPhone,
+            phone_from_bot: !!(supplement?.confirmed_phone || sessionInfo?.phone || botInfo?.phone),
             check_in_date: booking.check_in_date,
             check_out_date: booking.check_out_date,
             nights: booking.nights,
@@ -189,9 +212,9 @@ async function processBookings(bookings, guestOrders, profiles = {}) {
             balance_due: balanceDue,
             room_type_name: roomTypeName,
             room_numbers: booking.room_numbers || (booking.rooms && booking.rooms.length > 0 ? booking.rooms.map(r => r.room_number).filter(Boolean) : []),
-            // LINE 姓名優先級: SQLite > profiles(根據 line_user_id) > botInfo.line_display_name
-            line_name: supplement?.line_name || (botInfo?.line_user_id && profiles[botInfo.line_user_id]?.display_name) || botInfo?.line_display_name || null,
-            arrival_time_from_bot: supplement?.arrival_time || botInfo?.arrival_time || null,
+            // LINE 姓名優先級: SQLite > Session > profiles > botInfo
+            line_name: supplement?.line_name || (sessionInfo?.order_data?.display_name) || (botInfo?.line_user_id && profiles[botInfo.line_user_id]?.display_name) || botInfo?.line_display_name || null,
+            arrival_time_from_bot: supplement?.arrival_time || sessionInfo?.arrival_time || botInfo?.arrival_time || null,
             special_request_from_bot: null,
             staff_memo: supplement?.staff_memo || null // 新增櫃檯備註
         };

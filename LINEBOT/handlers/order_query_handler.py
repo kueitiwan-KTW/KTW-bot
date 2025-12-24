@@ -70,10 +70,33 @@ class OrderQueryHandler(BaseHandler):
             session['display_name'] = display_name
             print(f"📝 已儲存 display_name: {display_name}")
         
-        # 偵測「跨流程」意圖 (例如在查詢中要加訂)
-        if state != 'idle' and self._is_booking_intent(message):
-            self.state_machine.set_pending_intent(user_id, 'same_day_booking', message)
-            return "好的，了解您有加訂需求。為了確保權益，請先讓我幫您核對完這筆現有訂單的資訊，稍後立刻為您辦理加訂手續唷！"
+        # ============================================
+        # 🔧 意圖檢測層：在任何狀態下優先判斷
+        # ============================================
+        if state != 'idle':
+            current_order = session.get('order_id')
+            
+            # 1. 偵測「查詢新訂單」意圖（不同的訂單編號）
+            if IntentDetector.is_new_order_query(message, current_order):
+                new_order = IntentDetector.extract_order_number(message)
+                if new_order:
+                    print(f"🔀 意圖檢測：客人想查詢新訂單 {new_order}（當前：{current_order}）")
+                    # 先完成當前流程
+                    self._complete_collection(user_id)
+                    # 開始新查詢
+                    return self._query_order(user_id, new_order)
+            
+            # 2. 偵測「加訂」意圖
+            if self._is_booking_intent(message):
+                self.state_machine.set_pending_intent(user_id, 'same_day_booking', message)
+                return "好的，了解您有加訂需求。為了確保權益，請先讓我幫您核對完這筆現有訂單的資訊，稍後立刻為您辦理加訂手續唷！"
+            
+            # 3. 偵測「中斷/取消」意圖
+            if IntentDetector.is_interrupt_intent(message) or IntentDetector.is_cancel_intent(message):
+                print(f"❌ 意圖檢測：客人想中斷流程")
+                self.state_machine.transition(user_id, 'idle')
+                return "好的，已為您取消本次操作。如有其他需要，請隨時告訴我！"
+        # ============================================
 
         if state == 'idle':
             # 提取訂單編號並查詢
@@ -95,6 +118,7 @@ class OrderQueryHandler(BaseHandler):
             return self._handle_special_requests(user_id, message)
         
         return None
+
 
     def _normalize_phone(self, phone: str) -> str:
         """標準化電話號碼 (移至 order_helper)"""
@@ -135,6 +159,23 @@ class OrderQueryHandler(BaseHandler):
         if result:
             session['order_data'] = result
             self.state_machine.set_data(user_id, 'order_data', result)
+            
+            # 🔧 修復：找到訂單時立即建立基本記錄
+            # 這樣後續的 update_guest_request 才能正常運作
+            if self.logger:
+                ota_id = result.get('ota_id') or result.get('ota_booking_id') or order_id
+                display_name = session.get('display_name')
+                basic_order = {
+                    'order_id': order_id,
+                    'ota_id': ota_id,
+                    'guest_name': result.get('guest_name'),
+                    'check_in': result.get('check_in') or result.get('check_in_date'),
+                    'check_out': result.get('check_out') or result.get('check_out_date'),
+                    'line_user_id': user_id,
+                    'line_display_name': display_name
+                }
+                self.logger.save_order(basic_order)
+                print(f"📝 已建立訂單基本記錄: {order_id}")
             
             # 格式化訂單資訊
             details = self._format_order_details(result)
@@ -438,6 +479,23 @@ class OrderQueryHandler(BaseHandler):
         no_request_keywords = ['沒有', '無', '不用', '沒', '不需要', 'no']
         if any(kw in message_lower for kw in no_request_keywords):
             return self._complete_collection(user_id)
+        
+        # 🔧 修復：偵測訂單編號（可能客人想查另一筆訂單）
+        order_number = self._extract_order_number(message)
+        if order_number:
+            # 先完成當前流程
+            self._complete_collection(user_id)
+            # 開始新的訂單查詢
+            return self._query_order(user_id, order_number)
+        
+        # 🔧 修復：偵測查詢/確認意圖
+        query_keywords = ['查詢', '確認', '訂單', '另一筆', '第二筆', '2筆', '兩筆']
+        if any(kw in message_lower for kw in query_keywords):
+            # 完成當前流程，回到 idle
+            self._complete_collection(user_id)
+            return """好的，已完成這筆訂單的資料確認！
+
+如果您有其他訂單要確認，請直接輸入訂單編號，我會為您查詢。"""
         
         # 有特殊需求，儲存
         if 'special_requests' not in session:

@@ -328,10 +328,10 @@ CREATE TABLE same_day_bookings (
 
 **待開發項目**：
 
-- [ ] Users Collection 加入 `tenant` 關聯欄位
+- [x] Users Collection 加入 `tenant` 關聯欄位 ✅ 2025-12-24
 - [ ] 開放公開註冊頁面 `/auth/register`
-- [ ] 註冊後自動建立 Trial 狀態租戶
-- [ ] Email 驗證功能
+- [x] 註冊後自動建立 Trial 狀態租戶 ✅ 2025-12-24
+- [x] Email 驗證功能 ✅ 2025-12-24
 - [ ] 可選：申請表單模式（客人填表 → 管理員審核）
 
 **相關檔案**：

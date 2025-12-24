@@ -352,6 +352,34 @@ export function deleteBotSession(userId) {
     });
 }
 
+/**
+ * 取得所有進行中的 Bot Sessions（用於 Admin-Web 合併顯示）
+ * @returns {Promise<Array>} 所有進行中的 sessions
+ */
+export function getAllActiveSessions() {
+    return new Promise((resolve, reject) => {
+        db.all(
+            'SELECT * FROM bot_sessions WHERE state != ? AND state IS NOT NULL',
+            ['idle'],
+            (err, rows) => {
+                if (err) reject(err);
+                else {
+                    // 解析 JSON data 欄位
+                    const parsed = (rows || []).map(row => {
+                        try {
+                            row.data = row.data ? JSON.parse(row.data) : {};
+                        } catch {
+                            row.data = {};
+                        }
+                        return row;
+                    });
+                    resolve(parsed);
+                }
+            }
+        );
+    });
+}
+
 // ============================================
 // 🔧 方案 D：用戶訂單關聯 (User Order Mapping)
 // ============================================
