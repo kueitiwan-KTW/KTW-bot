@@ -204,15 +204,68 @@ AI 代理在結束任務前，必須執行以下檢查：
     4. **結案前檢查**
        - AI 必須掃描 TODO.md，確認本次完成的項目都已正確標記
 
-6.  **版本變更記錄 (CHANGELOG)** ⭐
+6.  **Bug 處理記錄 (Bug Fix Documentation)** ⭐
+
+    > [!IMPORTANT] > **核心原則**：所有 Bug 處理完成後，必須記錄到**相對應專案的 `README.md` 最下方**，作為歷史案例參考。
+
+    **執行時機**：
+
+    - ✅ Bug 成功修復後
+    - ✅ 問題暫時解決但需後續追蹤時（同時加入 TODO）
+
+    **記錄位置**：
+
+    - 記錄到**該 Bug 所屬專案**的 `README.md` 最下方
+    - 範例：
+      - Oracle 遷移相關 Bug → `ktw-oracle-to-pg/README.md`
+      - LINE Bot Bug → `KTW-bot/LINEBOT/README.md`
+      - Admin-Web Bug → `KTW-bot/KTW-admin-web/README.md`
+
+    **記錄格式**：
+
+    ```markdown
+    ---
+    
+    ## 🐛 問題處理記錄
+    
+    ### [YYYY-MM-DD] 問題標題
+    
+    **問題描述**：
+    用白話說明發生了什麼事
+    
+    **根本原因**：
+    為什麼會發生這個問題
+    
+    **解決方式**：
+    具體做了什麼修復
+    
+    **相關檔案**：
+    - `path/to/file.py` (L123-145)
+    
+    **測試結果**：
+    修復後的驗證結果
+    
+    ---
+    ```
+
+    **注意事項**：
+
+    - ❌ 若問題**無法完全解決**，必須同時加入 `TODO.md`
+    - ❌ 禁止只寫「已修復」而不說明原因和解法
+    - ✅ 使用白話描述，讓未來維護者能快速理解
+
+7.  **版本變更記錄 (CHANGELOG)** ⭐
+
     - **架構原則**：採用 **Monorepo 階層式變更日誌**,根目錄提供聚合摘要,各模組維護詳細記錄。
     - **執行時機**：
+
       - ✅ 發布新版本時 (最重要)
       - ✅ 新增功能時
       - ✅ 修復 Bug 時
       - ✅ 破壞性變更時 (Breaking Changes)
       - ✅ 重大優化時
       - **記憶法**：如果值得寫在 Git commit message,就值得寫在 CHANGELOG
+
     - **更新流程**：
       1. 先更新模組 CHANGELOG (如 `LINEBOT/CHANGELOG.md`)
       2. 再更新根目錄 `CHANGELOG.md` (簡潔摘要 + 連結)
