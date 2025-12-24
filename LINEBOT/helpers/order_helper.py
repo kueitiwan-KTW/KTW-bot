@@ -216,22 +216,40 @@ def sync_order_details(order_id: str, data: Dict[str, Any], logger: Any, pms_cli
     try:
         for key in storage_keys:
             # 1. 儲存到 guest_orders.json (透過 ChatLogger)
+            # 🔧 修復：先讀取現有資料，再合併新資料
             if logger:
-                full_order = {
+                existing_order = logger.get_order(key) or {}
+                
+                # 準備新資料
+                new_data = {
                     'order_id': key,
                     'pms_id': order_id,  # 保留 PMS ID 參考
                     'ota_id': ota_id,    # 保留 OTA ID 參考
                     'guest_name': data.get('guest_name'),
-                    'phone': data.get('phone'),
-                    'arrival_time': data.get('arrival_time'),
-                    'special_requests': data.get('special_requests', []),
                     'line_user_id': data.get('line_user_id'),
                     'line_display_name': data.get('display_name'),
                     'updated_at': datetime.now().isoformat()
                 }
+                
+                # 只更新有值的欄位（避免用 None 覆蓋現有資料）
+                if data.get('phone'):
+                    new_data['phone'] = data.get('phone')
+                if data.get('arrival_time'):
+                    new_data['arrival_time'] = data.get('arrival_time')
+                if data.get('special_requests'):
+                    # 合併特殊需求（不要覆蓋）
+                    existing_reqs = existing_order.get('special_requests', [])
+                    new_reqs = data.get('special_requests', [])
+                    # 去重合併
+                    all_reqs = existing_reqs + [r for r in new_reqs if r not in existing_reqs]
+                    new_data['special_requests'] = all_reqs
+                    
                 for field in ['check_in', 'check_out', 'room_type', 'booking_source']:
-                    if field in data:
-                        full_order[field] = data[field]
+                    if field in data and data[field]:
+                        new_data[field] = data[field]
+                
+                # 合併：現有資料 + 新資料（新資料優先，但不覆蓋空值）
+                full_order = {**existing_order, **{k: v for k, v in new_data.items() if v is not None}}
                         
                 logger.save_order(full_order)
 
