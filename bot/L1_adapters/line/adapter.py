@@ -34,14 +34,17 @@ class LineAdapter(BaseAdapter):
         self._handler = None
     
     def _init_line_sdk(self):
-        """初始化 LINE SDK"""
+        """初始化 LINE SDK v3.x"""
         if self._line_bot_api is None:
             try:
-                from linebot import LineBotApi, WebhookHandler
-                self._line_bot_api = LineBotApi(self.channel_access_token)
+                from linebot.v3 import WebhookHandler
+                from linebot.v3.messaging import Configuration, ApiClient, MessagingApi
+                
+                self._configuration = Configuration(access_token=self.channel_access_token)
                 self._handler = WebhookHandler(self.channel_secret)
+                # 注意：v3.x 的 MessagingApi 需要在 context manager 中使用
             except ImportError:
-                raise ImportError("請安裝 line-bot-sdk: pip install line-bot-sdk")
+                raise ImportError("請安裝 line-bot-sdk>=3.0.0: pip install line-bot-sdk")
     
     def parse_event(self, raw_event: Any) -> UnifiedEvent:
         """
@@ -88,7 +91,7 @@ class LineAdapter(BaseAdapter):
     
     def to_platform(self, message: UnifiedMessage) -> List[Any]:
         """
-        將統一訊息轉換為 LINE 格式
+        將統一訊息轉換為 LINE 格式 (v3.x)
         
         Args:
             message: UnifiedMessage 統一訊息
@@ -96,11 +99,11 @@ class LineAdapter(BaseAdapter):
         Returns:
             list: LINE 訊息物件列表
         """
-        from linebot.models import (
-            TextSendMessage,
-            ImageSendMessage,
+        from linebot.v3.messaging import (
+            TextMessage,
+            ImageMessage,
             QuickReply,
-            QuickReplyButton,
+            QuickReplyItem,
             MessageAction
         )
         
@@ -108,21 +111,22 @@ class LineAdapter(BaseAdapter):
         
         # 文字訊息
         if message.text:
-            text_msg = TextSendMessage(text=message.text)
+            quick_reply = None
             
             # 快速回覆
             if message.quick_replies:
                 items = [
-                    QuickReplyButton(action=MessageAction(label=qr[:20], text=qr))
+                    QuickReplyItem(action=MessageAction(label=qr[:20], text=qr))
                     for qr in message.quick_replies[:13]  # LINE 限制 13 個
                 ]
-                text_msg.quick_reply = QuickReply(items=items)
+                quick_reply = QuickReply(items=items)
             
+            text_msg = TextMessage(text=message.text, quick_reply=quick_reply)
             messages.append(text_msg)
         
         # 圖片訊息
         for image_url in message.images:
-            messages.append(ImageSendMessage(
+            messages.append(ImageMessage(
                 original_content_url=image_url,
                 preview_image_url=image_url
             ))
@@ -131,7 +135,7 @@ class LineAdapter(BaseAdapter):
     
     def send_message(self, reply_token: str, message: UnifiedMessage) -> bool:
         """
-        發送回覆訊息
+        發送回覆訊息 (v3.x)
         
         Args:
             reply_token: LINE reply token
@@ -143,8 +147,18 @@ class LineAdapter(BaseAdapter):
         self._init_line_sdk()
         
         try:
+            from linebot.v3.messaging import ApiClient, MessagingApi, ReplyMessageRequest
+            
             line_messages = self.to_platform(message)
-            self._line_bot_api.reply_message(reply_token, line_messages)
+            
+            with ApiClient(self._configuration) as api_client:
+                line_bot_api = MessagingApi(api_client)
+                line_bot_api.reply_message_with_http_info(
+                    ReplyMessageRequest(
+                        reply_token=reply_token,
+                        messages=line_messages
+                    )
+                )
             return True
         except Exception as e:
             print(f"LINE 發送訊息失敗: {e}")
@@ -152,7 +166,7 @@ class LineAdapter(BaseAdapter):
     
     def send_push(self, user_id: str, message: UnifiedMessage) -> bool:
         """
-        主動推送訊息
+        主動推送訊息 (v3.x)
         
         Args:
             user_id: LINE 使用者 ID
@@ -164,8 +178,18 @@ class LineAdapter(BaseAdapter):
         self._init_line_sdk()
         
         try:
+            from linebot.v3.messaging import ApiClient, MessagingApi, PushMessageRequest
+            
             line_messages = self.to_platform(message)
-            self._line_bot_api.push_message(user_id, line_messages)
+            
+            with ApiClient(self._configuration) as api_client:
+                line_bot_api = MessagingApi(api_client)
+                line_bot_api.push_message_with_http_info(
+                    PushMessageRequest(
+                        to=user_id,
+                        messages=line_messages
+                    )
+                )
             return True
         except Exception as e:
             print(f"LINE 推送訊息失敗: {e}")
@@ -173,7 +197,7 @@ class LineAdapter(BaseAdapter):
     
     def get_user_profile(self, user_id: str) -> Optional[Dict[str, Any]]:
         """
-        取得使用者資料
+        取得使用者資料 (v3.x)
         
         Args:
             user_id: LINE 使用者 ID
@@ -184,13 +208,17 @@ class LineAdapter(BaseAdapter):
         self._init_line_sdk()
         
         try:
-            profile = self._line_bot_api.get_profile(user_id)
-            return {
-                'user_id': profile.user_id,
-                'display_name': profile.display_name,
-                'picture_url': profile.picture_url,
-                'status_message': profile.status_message
-            }
+            from linebot.v3.messaging import ApiClient, MessagingApi
+            
+            with ApiClient(self._configuration) as api_client:
+                line_bot_api = MessagingApi(api_client)
+                profile = line_bot_api.get_profile(user_id)
+                return {
+                    'user_id': profile.user_id,
+                    'display_name': profile.display_name,
+                    'picture_url': profile.picture_url,
+                    'status_message': profile.status_message
+                }
         except Exception as e:
             print(f"LINE 取得使用者資料失敗: {e}")
             return None

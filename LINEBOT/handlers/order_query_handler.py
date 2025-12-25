@@ -480,6 +480,12 @@ class OrderQueryHandler(BaseHandler):
         if any(kw in message_lower for kw in no_request_keywords):
             return self._complete_collection(user_id)
         
+        # 🔧 修復：純確認詞應該完成流程，不當成需求
+        # （客人可能說「好」、「是」、「對」表示確認完成）
+        confirmation_only = ['是', '對', '好', '好的', 'ok', 'yes', '嗯', '可以', '了']
+        if message_lower in confirmation_only:
+            return self._complete_collection(user_id)
+        
         # 🔧 修復：偵測訂單編號（可能客人想查另一筆訂單）
         order_number = self._extract_order_number(message)
         if order_number:
@@ -496,6 +502,10 @@ class OrderQueryHandler(BaseHandler):
             return """好的，已完成這筆訂單的資料確認！
 
 如果您有其他訂單要確認，請直接輸入訂單編號，我會為您查詢。"""
+        
+        # 🔧 修復：過濾無意義的短回覆（通常是誤按或疑問）
+        if len(message_lower) <= 2 and not IntentDetector.is_special_request(message):
+            return self._complete_collection(user_id)
         
         # 有特殊需求，儲存
         if 'special_requests' not in session:

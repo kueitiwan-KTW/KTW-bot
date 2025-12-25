@@ -46,14 +46,14 @@ class IntentRecognizer:
         self._model = None
     
     def _init_model(self):
-        """初始化 Gemini 模型"""
+        """初始化 Gemini 模型 (使用新版 SDK google-genai)"""
         if self._model is None:
             try:
-                import google.generativeai as genai
-                genai.configure(api_key=self.api_key)
-                self._model = genai.GenerativeModel('gemini-2.0-flash-exp')
+                from google import genai
+                self._client = genai.Client(api_key=self.api_key)
+                self._model = 'gemini-2.0-flash-exp'  # 新版 SDK 直接使用模型名稱
             except ImportError:
-                raise ImportError("請安裝 google-generativeai: pip install google-generativeai")
+                raise ImportError("請安裝 google-genai: pip install google-genai")
     
     def recognize(self, text: str, context: str = "") -> IntentResult:
         """
@@ -88,7 +88,10 @@ class IntentRecognizer:
 {{"intent": "意圖名稱", "room_type": "房型", "guests": 人數}}"""
 
         try:
-            response = self._model.generate_content(prompt)
+            response = self._client.models.generate_content(
+                model=self._model,
+                contents=prompt
+            )
             result_text = response.text.strip()
             
             # 嘗試解析 JSON

@@ -14,9 +14,17 @@ from flask import Flask, request, abort
 # 確保可以導入 bot 模組
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from linebot import LineBotApi, WebhookHandler
-from linebot.exceptions import InvalidSignatureError
-from linebot.models import MessageEvent, TextMessage, TextSendMessage
+# LINE Bot SDK v3.x
+from linebot.v3 import WebhookHandler
+from linebot.v3.exceptions import InvalidSignatureError
+from linebot.v3.messaging import (
+    Configuration,
+    ApiClient,
+    MessagingApi,
+    ReplyMessageRequest,
+    TextMessage
+)
+from linebot.v3.webhooks import MessageEvent, TextMessageContent
 
 # 從新架構導入
 from L1_adapters.line.adapter import LineAdapter
@@ -37,8 +45,8 @@ line_adapter = LineAdapter(LINE_CHANNEL_ACCESS_TOKEN, LINE_CHANNEL_SECRET)
 intent_recognizer = IntentRecognizer()
 session_manager = SessionManager()
 
-# LINE SDK
-line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
+# LINE SDK v3.x
+configuration = Configuration(access_token=LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
 # 狀態機類別對照
@@ -62,7 +70,7 @@ def callback():
     return 'OK'
 
 
-@handler.add(MessageEvent, message=TextMessage)
+@handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
     """處理文字訊息"""
     user_id = event.source.user_id
@@ -74,11 +82,15 @@ def handle_message(event):
     # 處理訊息
     response = process_message(user_id, text, machine)
     
-    # 回覆
-    line_bot_api.reply_message(
-        event.reply_token,
-        TextSendMessage(text=response)
-    )
+    # 回覆 (v3.x 使用 ApiClient context manager)
+    with ApiClient(configuration) as api_client:
+        line_bot_api = MessagingApi(api_client)
+        line_bot_api.reply_message_with_http_info(
+            ReplyMessageRequest(
+                reply_token=event.reply_token,
+                messages=[TextMessage(text=response)]
+            )
+        )
 
 
 def process_message(user_id: str, text: str, machine=None) -> str:

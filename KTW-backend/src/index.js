@@ -56,18 +56,25 @@ function getUserProfiles() {
 
 // 智慧匹配：從 guest_orders.json 找出對應的 Bot 收集資訊
 function matchGuestOrder(booking, guestOrders) {
-    // 1. 優先用 PMS 訂單編號精確匹配
+    // 1. 優先用 OTA 訂單編號匹配（Bot 主要用 OTA ID 儲存完整資料）
+    if (booking.ota_booking_id && guestOrders[booking.ota_booking_id]) {
+        return guestOrders[booking.ota_booking_id];
+    }
+
+    // 2. 嘗試用純數字 OTA ID 匹配
+    if (booking.ota_booking_id) {
+        const cleanOta = booking.ota_booking_id.replace(/^[A-Z]+/, '');
+        if (cleanOta !== booking.ota_booking_id && guestOrders[cleanOta]) {
+            return guestOrders[cleanOta];
+        }
+    }
+
+    // 3. 用 PMS 訂單編號匹配（備用）
     if (guestOrders[booking.booking_id]) {
         return guestOrders[booking.booking_id];
     }
 
-    // 2. 嘗試用 OTA 訂單編號匹配（Bot 可能用 OTA ID 記錄）
-    if (booking.ota_booking_id && guestOrders[booking.ota_booking_id]) {
-        console.log(`🔗 OTA ID 匹配成功: ${booking.ota_booking_id}`);
-        return guestOrders[booking.ota_booking_id];
-    }
-
-    // 3. 用姓名+入住日期模糊匹配
+    // 4. 用姓名+入住日期模糊匹配
     const bookingName = booking.guest_name?.toLowerCase().replace(/\s+/g, '');
     const bookingDate = booking.check_in_date;
 
