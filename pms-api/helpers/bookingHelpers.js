@@ -120,24 +120,46 @@ async function getRoomDetails(connection, bookingId) {
 }
 
 /**
- * 查詢訂單的已分配房號（只顯示最終入住房間，過濾掉換房前的房間）
+ * 查詢訂單的已分配房號（含換房記錄）
+ * 如果有換房記錄，顯示「原房號→新房號」格式
  * @param {Object} connection - 資料庫連線
  * @param {string} bookingId - 訂單編號
- * @returns {Promise<Array>} 房號列表
+ * @returns {Promise<Array>} 房號列表（換房時顯示如 ["211→502"]）
  */
 async function getRoomNumbers(connection, bookingId) {
     try {
-        // 過濾掉純 C/O 狀態的房間（換房退出的房間）
-        // 保留 C/I、CHGROOMC/I 等入住中的房間
+        // 查詢所有房間分配記錄（按時間排序）
         const result = await connection.execute(
-            `SELECT DISTINCT TRIM(ROOM_NOS) as room_number
+            `SELECT TRIM(ROOM_NOS) as room_number, TRIM(STATUS_COD) as status
              FROM GDWUUKT.ASSIGN_DT
              WHERE TRIM(IKEY) = :booking_id
                AND ROOM_NOS IS NOT NULL
-               AND TRIM(STATUS_COD) != 'C/O'`,
+             ORDER BY BEGIN_DAT ASC`,
             { booking_id: bookingId }
         );
-        return result.rows.map(r => r[0]).filter(Boolean);
+        
+        if (!result.rows || result.rows.length === 0) {
+            return [];
+        }
+        
+        // 分析換房記錄
+        const records = result.rows.map(r => ({ room: r[0], status: r[1] }));
+        
+        // 找出換房前的房間（C/O 狀態，且不是 CHGROOM 開頭）和換房後的房間（CHGROOMC/I）
+        const originalRooms = records.filter(r => r.status === 'C/O');
+        const changedRooms = records.filter(r => r.status && r.status.includes('CHGROOM'));
+        const currentRooms = records.filter(r => r.status && r.status.includes('C/I') && !r.status.startsWith('C/O'));
+        
+        // 如果有換房記錄，顯示「原房號→新房號」格式
+        if (changedRooms.length > 0 && originalRooms.length > 0) {
+            const originalRoom = originalRooms[0].room;
+            const newRoom = changedRooms[0].room;
+            return [`${originalRoom}→${newRoom}`];
+        }
+        
+        // 沒有換房，只返回當前入住的房間
+        const activeRooms = currentRooms.map(r => r.room).filter(Boolean);
+        return [...new Set(activeRooms)]; // 去重
     } catch (err) {
         console.log(`查詢房號失敗 (${bookingId}):`, err.message);
         return [];
