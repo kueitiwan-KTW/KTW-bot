@@ -27,7 +27,7 @@ module.exports = {
       name: "DT-Admin-Web",
       script: "npm",
       args: "run dev",
-      cwd: "./KTW-admin-web",
+      cwd: "./ktw-admin-web",
       env: {
         PORT: 5002,
       },

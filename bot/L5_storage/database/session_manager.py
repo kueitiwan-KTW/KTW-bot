@@ -84,7 +84,7 @@ class SessionManager:
     
     STATE_IDLE = 'idle'
     
-    # KTW-backend API URL
+    # ktw-backend API URL
     BACKEND_API_URL = os.getenv('KTW_BACKEND_URL', 'http://localhost:3000')
     
     def __init__(self, tenant_id: str = None):

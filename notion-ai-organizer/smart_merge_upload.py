@@ -28,7 +28,7 @@ MERGE_GROUPS = {
 
 # 專案圖示映射
 PROJECT_ICONS = {
-    'KTW-bot': '🤖',
+    'ktw-bot': '🤖',
     'pms-api': '🔌',
     'pms-api-poc': '🔬',
     'notion-ai-organizer': '📄',
@@ -36,7 +36,7 @@ PROJECT_ICONS = {
 
 # 專案分類（目錄）
 PROJECT_CATEGORIES = {
-    'KTW-bot': 'Bot',
+    'ktw-bot': 'Bot',
     'pms-api': 'PMS',
     'pms-api-poc': 'PMS',
     'notion-ai-organizer': '工具',
@@ -158,14 +158,14 @@ def get_project_name(file_path):
     
     # 找到 KTW-bot 後的第一個目錄
     try:
-        ktw_index = parts.index('KTW-bot')
+        ktw_index = parts.index('ktw-bot')
         if ktw_index + 1 < len(parts):
             project = parts[ktw_index + 1]
-            return project if project in PROJECT_ICONS else 'KTW-bot'
+            return project if project in PROJECT_ICONS else 'ktw-bot'
     except ValueError:
         pass
     
-    return 'KTW-bot'
+    return 'ktw-bot'
 
 def merge_documents(group_info):
     """
@@ -280,7 +280,7 @@ def smart_batch_upload(limit=None):
     print('🚀 智能合併批量上傳（專案分組模式）\n')
     
     # 1. 掃描檔案
-    files = find_important_files('/Users/ktw/ktw-projects/KTW-bot')
+    files = find_important_files('/Users/ktw/ktw-projects/ktw-bot')
     
     # 2. 智能分類檔案
     merged_groups, standalone_files = categorize_files(files)

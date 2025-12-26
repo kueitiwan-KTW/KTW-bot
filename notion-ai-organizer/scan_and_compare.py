@@ -274,7 +274,7 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description='掃描並比對專案文檔與 Notion 頁面')
-    parser.add_argument('--project', default='/Users/ktw/ktw-projects/KTW-bot', help='專案根目錄')
+    parser.add_argument('--project', default='/Users/ktw/ktw-projects/ktw-bot', help='專案根目錄')
     parser.add_argument('--include-code', action='store_true', help='包含程式碼文件（.py, .js）')
     parser.add_argument('--export', default='scan_results.txt', help='導出結果文件名')
     

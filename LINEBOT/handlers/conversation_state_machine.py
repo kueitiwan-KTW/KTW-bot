@@ -6,7 +6,7 @@
 - 提供統一的狀態轉換 API
 - 處理跨流程意圖跳轉 (pending_intent)
 - 根據狀態決定應使用的 Handler
-- 【新增】持久化到 SQLite (透過 KTW-backend API)
+- 【新增】持久化到 SQLite (透過 ktw-backend API)
 
 設計原則：
 - Single Source of Truth (SSOT)
@@ -47,7 +47,7 @@ class ConversationStateMachine:
     STATE_BOOKING_CONFIRM = 'booking.confirm'
     STATE_BOOKING_COMPLETED = 'booking.completed'
     
-    # KTW-backend API URL (本地，非 PMS 192.168.8.3)
+    # ktw-backend API URL (本地，非 PMS 192.168.8.3)
     BACKEND_API_URL = os.getenv('KTW_BACKEND_URL', 'http://localhost:3000')
     
     def __init__(self):
@@ -87,7 +87,7 @@ class ConversationStateMachine:
         }
     
     def _load_from_backend(self, user_id: str) -> Optional[Dict[str, Any]]:
-        """從 KTW-backend 載入 session"""
+        """從 ktw-backend 載入 session"""
         if not self._sync_enabled:
             return None
         try:
@@ -112,7 +112,7 @@ class ConversationStateMachine:
         return None
     
     def _sync_to_backend(self, user_id: str):
-        """同步 session 到 KTW-backend"""
+        """同步 session 到 ktw-backend"""
         if not self._sync_enabled:
             return
         try:
@@ -137,7 +137,7 @@ class ConversationStateMachine:
             print(f"⚠️ 同步 Session 失敗: {e}")
     
     def _delete_from_backend(self, user_id: str):
-        """從 KTW-backend 刪除 session"""
+        """從 ktw-backend 刪除 session"""
         if not self._sync_enabled:
             return
         try:
