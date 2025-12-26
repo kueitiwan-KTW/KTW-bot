@@ -120,18 +120,21 @@ async function getRoomDetails(connection, bookingId) {
 }
 
 /**
- * 查詢訂單的已分配房號
+ * 查詢訂單的已分配房號（只顯示最終入住房間，過濾掉換房前的房間）
  * @param {Object} connection - 資料庫連線
  * @param {string} bookingId - 訂單編號
  * @returns {Promise<Array>} 房號列表
  */
 async function getRoomNumbers(connection, bookingId) {
     try {
+        // 過濾掉純 C/O 狀態的房間（換房退出的房間）
+        // 保留 C/I、CHGROOMC/I 等入住中的房間
         const result = await connection.execute(
             `SELECT DISTINCT TRIM(ROOM_NOS) as room_number
              FROM GDWUUKT.ASSIGN_DT
              WHERE TRIM(IKEY) = :booking_id
-               AND ROOM_NOS IS NOT NULL`,
+               AND ROOM_NOS IS NOT NULL
+               AND TRIM(STATUS_COD) != 'C/O'`,
             { booking_id: bookingId }
         );
         return result.rows.map(r => r[0]).filter(Boolean);
@@ -168,22 +171,45 @@ async function getRoomStatus(connection, bookingId) {
 
 /**
  * 查詢訂單的入住/退房狀態 (來自 ASSIGN_DT.STATUS_COD)
+ * 換房邏輯：如果有任何一間房是 C/I 或 CHGROOMC/I，表示客人仍在住
  * @param {Object} connection - 資料庫連線
  * @param {string} bookingId - 訂單編號
- * @returns {Promise<string>} 狀態代碼 ('C/I' = 已入住, 'C/O' = 已退房)
+ * @returns {Promise<string>} 狀態代碼 ('C/I' = 已入住, 'C/O' = 已退房, 'CHGROOMC/I' = 換房入住中)
  */
 async function getAssignStatus(connection, bookingId) {
     try {
-        // 優先找最新的 STATUS_COD，如果有 C/O 就代表已退房
+        // 查詢所有房間狀態，優先判斷是否有仍在入住的房間
         const result = await connection.execute(
             `SELECT TRIM(STATUS_COD) 
              FROM GDWUUKT.ASSIGN_DT 
              WHERE TRIM(IKEY) = :booking_id
-             ORDER BY BEGIN_DAT DESC
-             FETCH FIRST 1 ROWS ONLY`,
+             ORDER BY BEGIN_DAT DESC`,
             { booking_id: bookingId }
         );
-        return result.rows[0] ? result.rows[0][0] : null;
+        
+        if (!result.rows || result.rows.length === 0) {
+            return null;
+        }
+        
+        // 收集所有狀態
+        const statuses = result.rows.map(r => r[0]);
+        
+        // 優先級：如果有任何入住中狀態（C/I 或 CHGROOMC/I），表示仍在住
+        const hasCheckedIn = statuses.some(s => s && (s.includes('C/I') && !s.startsWith('C/O')));
+        if (hasCheckedIn) {
+            // 返回換房入住狀態（如果有 CHGROOMC/I）或普通入住狀態
+            const roomChangeStatus = statuses.find(s => s && s.includes('CHGROOM'));
+            return roomChangeStatus || 'C/I';
+        }
+        
+        // 如果所有房間都是 C/O，則已退房
+        const allCheckedOut = statuses.every(s => s && s === 'C/O');
+        if (allCheckedOut) {
+            return 'C/O';
+        }
+        
+        // 返回最新狀態
+        return statuses[0];
     } catch (err) {
         console.log(`查詢入住退房狀態失敗 (${bookingId}):`, err.message);
         return null;
@@ -192,7 +218,7 @@ async function getAssignStatus(connection, bookingId) {
 
 /**
  * 取得有效的訂單狀態碼 (DRY 原則：統一判斷退房邏輯)
- * 如果 ASSIGN_DT.STATUS_COD = 'C/O'，則覆蓋為 'CO' (已退房)
+ * 換房處理：CHGROOMC/I 表示換房後仍在入住，不應標記為已退房
  * @param {Object} connection - 資料庫連線
  * @param {string} bookingId - 訂單編號
  * @param {string} originalStatusCode - 原始訂單狀態碼
@@ -201,10 +227,17 @@ async function getAssignStatus(connection, bookingId) {
 async function getEffectiveStatus(connection, bookingId, originalStatusCode) {
     const assignStatus = await getAssignStatus(connection, bookingId);
 
-    // 如果 ASSIGN_DT 有明確的 C/O 訊號，覆蓋為「已退房」
     let statusCode = originalStatusCode;
-    if (assignStatus === 'C/O') {
-        statusCode = 'CO';
+    
+    if (assignStatus) {
+        // 換房入住中或普通入住中：保持「已入住」狀態
+        if (assignStatus.includes('C/I') && !assignStatus.startsWith('C/O')) {
+            statusCode = 'I';  // 已入住
+        }
+        // 純 C/O（所有房間都退出）：覆蓋為「已退房」
+        else if (assignStatus === 'C/O') {
+            statusCode = 'CO';  // 已退房
+        }
     }
 
     return {
