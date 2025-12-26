@@ -51,7 +51,7 @@ bot/
 ## 快速開始
 
 ```bash
-cd /Users/ktw/ktw-projects/KTW-bot/bot
+cd /Users/ktw/ktw-projects/ktw-bot/bot
 pip install -r requirements.txt
 cp .env.example .env
 python app.py

@@ -11,7 +11,7 @@
 | 對話記錄 | `data/chat_logs/{user_id}.txt` | 永久 | 查看客人對話 |
 | Bot 內部 | `data/bot_logs/bot_YYYY-MM-DD.log` | 7 天 | Bot 運作追蹤 |
 | API 調用 (Bot端) | `data/api_logs/pms_api_YYYY-MM-DD.log` | 永久 | 診斷網路問題 |
-| API 伺服器 | `C:/KTW-bot/pms-api/logs/pms_api_YYYY-MM-DD.log` | 3 天 | Oracle 錯誤診斷 |
+| API 伺服器 | `C:/ktw-bot/pms-api/logs/pms_api_YYYY-MM-DD.log` | 3 天 | Oracle 錯誤診斷 |
 
 ---
 
@@ -50,10 +50,10 @@ grep "status=404" data/api_logs/pms_api_*.log
 ### 4. 查看 PMS API 伺服器 LOG (遠端)
 ```bash
 # SSH 連線查看今日 LOG
-ssh Administrator@192.168.8.3 "type C:\\KTW-bot\\pms-api\\logs\\pms_api_2025-12-21.log"
+ssh Administrator@192.168.8.3 "type C:\\ktw-bot\\pms-api\\logs\\pms_api_2025-12-21.log"
 
 # 搜尋 Oracle 錯誤
-ssh Administrator@192.168.8.3 "findstr \"ERROR\" C:\\KTW-bot\\pms-api\\logs\\pms_api_2025-12-21.log"
+ssh Administrator@192.168.8.3 "findstr \"ERROR\" C:\\ktw-bot\\pms-api\\logs\\pms_api_2025-12-21.log"
 ```
 
 ---
@@ -77,7 +77,7 @@ grep "order_id=客人提供的編號" data/api_logs/pms_api_*.log
 
 **步驟 2**：查 PMS API 伺服器 LOG
 ```bash
-ssh Administrator@192.168.8.3 "type C:\\KTW-bot\\pms-api\\logs\\pms_api_$(date +%Y-%m-%d).log"
+ssh Administrator@192.168.8.3 "type C:\\ktw-bot\\pms-api\\logs\\pms_api_$(date +%Y-%m-%d).log"
 ```
 
 ---

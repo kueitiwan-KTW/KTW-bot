@@ -80,7 +80,7 @@ manage-service.bat
 
 **使用方法**：
 ```bash
-cd C:\KTW-bot\pms-api
+cd C:\ktw-bot\pms-api
 node uninstall_service.js
 ```
 
@@ -272,7 +272,7 @@ curl http://192.168.8.3:3000/api/health
 #### 1. 下載 NSSM
 - **下載連結**：https://nssm.cc/release/nssm-2.24.zip
 - **檔案**：解壓後取得 `win64\nssm.exe`
-- **放置位置**：複製到 `C:\KTW-bot\pms-api\nssm.exe`
+- **放置位置**：複製到 `C:\ktw-bot\pms-api\nssm.exe`
 
 ---
 
@@ -280,7 +280,7 @@ curl http://192.168.8.3:3000/api/health
 
 #### Step 1：確認檔案結構
 ```
-C:\KTW-bot\pms-api\
+C:\ktw-bot\pms-api\
 ├── server.js
 ├── package.json
 ├── .env
@@ -292,7 +292,7 @@ C:\KTW-bot\pms-api\
 
 #### Step 2：安裝 npm 套件
 ```bash
-cd C:\KTW-bot\pms-api
+cd C:\ktw-bot\pms-api
 npm install
 ```
 
@@ -413,7 +413,7 @@ graph TB
 **檢查清單**：
 1. 確認 `nssm.exe` 在正確位置
 2. 確認 Node.js 已安裝（`where node`）
-3. 查看錯誤日誌：`C:\KTW-bot\pms-api\logs\error.log`
+3. 查看錯誤日誌：`C:\ktw-bot\pms-api\logs\error.log`
 
 **常見錯誤**：
 ```
@@ -471,7 +471,7 @@ GET /api/v1/rooms/availability?check_in=YYYY-MM-DD&check_out=YYYY-MM-DD
 ## 🔗 相關連結
 
 - **LINE Bot 文檔**：參見 `LINE Bot v1.1.0 技術文檔`（獨立文件）
-- **GitHub**：https://github.com/kueitiwan-KTW/KTW-bot
+- **GitHub**：https://github.com/kueitiwan-KTW/ktw-bot
 - **Git Tag**：`api-v1.6`
 
 ---

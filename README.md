@@ -15,12 +15,12 @@
 - **技術**: Python, Flask, Google Gemini AI
 - **亮點**: 語音轉文字、多房型當日預訂、圖片訂單識別
 
-### 2. [Admin Dashboard](./KTW-admin-web/README.md) 🖥️
+### 2. [Admin Dashboard](./ktw-admin-web/README.md) 🖥️
 - **功能**: 櫃台人員操作介面
 - **技術**: Vue.js 3, Vite
 - **亮點**: 即時房況監控、已 KEY 訂單自動驗證、服務狀態儀表板
 
-### 3. [Backend API](./KTW-backend/README.md) ⚙️
+### 3. [Backend API](./ktw-backend/README.md) ⚙️
 - **功能**: 中間層通訊與通知服務
 - **技術**: Node.js, Express, WebSocket
 - **亮點**: 統一 API Gateway、LINE 訊息即時推送
@@ -42,8 +42,8 @@
 ### 版本歷史
 - [總體 CHANGELOG](./CHANGELOG.md)
 - [LINE Bot 變更](./LINEBOT/CHANGELOG.md)
-- [Admin Web 變更](./KTW-admin-web/CHANGELOG.md)
-- [Backend API 變更](./KTW-backend/CHANGELOG.md)
+- [Admin Web 變更](./ktw-admin-web/CHANGELOG.md)
+- [Backend API 變更](./ktw-backend/CHANGELOG.md)
 - [PMS API 變更](./pms-api/CHANGELOG.md)
 
 ---

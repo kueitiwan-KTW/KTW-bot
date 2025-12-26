@@ -11,11 +11,11 @@
 ## 📦 部署步骤
 
 ### 1. 复制档案到 Windows Server
-将 `pms-api` 资料夹复制到 `C:\KTW-bot\pms-api`
+将 `pms-api` 资料夹复制到 `C:\ktw-bot\pms-api`
 
 ### 2. 执行部署脚本
 ```powershell
-cd C:\KTW-bot\pms-api
+cd C:\ktw-bot\pms-api
 .\deploy-windows.bat
 ```
 

@@ -3,7 +3,7 @@ module.exports = {
     {
       name: "DT-Backend",
       script: "./src/index.js",
-      cwd: "./KTW-backend",
+      cwd: "./ktw-backend",
       watch: true,
       env: {
         NODE_ENV: "production",

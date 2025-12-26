@@ -342,7 +342,7 @@ Wi-Fi 密碼：Check-in 時自動生成專屬 Wi-Fi 密碼 (Voucher)，Check-out
 
 kueitiwan-KTW/
 
-├── KTW-bot/                  # [Python] LINE Bot (AI Core)
+├── ktw-bot/                  # [Python] LINE Bot (AI Core)
 
 │   ├── app.py
 
@@ -350,7 +350,7 @@ kueitiwan-KTW/
 
 │
 
-├── KTW-backend/              # [Node.js] IO Core & API Gateway
+├── ktw-backend/              # [Node.js] IO Core & API Gateway
 
 │   ├── src/
 
@@ -376,7 +376,7 @@ kueitiwan-KTW/
 
 │
 
-├── KTW-admin-web/            # [Vue.js] 櫃台管理後台
+├── ktw-admin-web/            # [Vue.js] 櫃台管理後台
 
 │   ├── src/
 
@@ -412,7 +412,7 @@ kueitiwan-KTW/
 
 環境地基：安裝 Docker, PostgreSQL 16, Node.js 20 環境；建立 kueitiwan-KTW 專案目錄結構。
 
-後台框架 (Vue.js)：初始化 KTW-admin-web (Vite + Vue3)；架設 UI 骨架：登入頁、側邊選單(導覽列)、儀表板空殼。
+後台框架 (Vue.js)：初始化 ktw-admin-web (Vite + Vue3)；架設 UI 骨架：登入頁、側邊選單(導覽列)、儀表板空殼。
 
 效果：可以打開瀏覽器看到後台畫面（即使數據是假的）。
 
@@ -648,11 +648,11 @@ CREATE INDEX idx_wifi_access_line ON wifi.access_logs(line_user_id);
 
 ### 10.8 與既有程式碼結構的整合點
 
-KTW-backend/src/drivers/unifi.js：延伸為『UniFi Network API client』，包含 sites/clients/actions 封裝。 [R2]
+ktw-backend/src/drivers/unifi.js：延伸為『UniFi Network API client』，包含 sites/clients/actions 封裝。 [R2]
 
-新增模組：KTW-backend/src/modules/wifi_portal/（Portal Landing、LINE callback、friendship status check）。
+新增模組：ktw-backend/src/modules/wifi_portal/（Portal Landing、LINE callback、friendship status check）。
 
-KTW-bot（AI Core）：可在旅客完成 Wi-Fi 認證後推送歡迎訊息/導流（非必需）。
+ktw-bot（AI Core）：可在旅客完成 Wi-Fi 認證後推送歡迎訊息/導流（非必需）。
 
 # 附錄 A － 異地備份 Runbook（Windows + UniFi VPN + Synology）
 
@@ -716,7 +716,7 @@ KTW External Portal 網域（建議獨立子網域，例如 portal.xxx.com），
 
 LINE Developers：建立 LINE Login Channel 並與 Official Account 連結（bot link），啟用 add friend option。 [R5]
 
-KTW-backend 取得 UniFi Network API 存取權杖（依你採用的 UniFi 部署方式設定）。 [R2]
+ktw-backend 取得 UniFi Network API 存取權杖（依你採用的 UniFi 部署方式設定）。 [R2]
 
 ## B.2 UniFi 設定步驟（摘要）
 

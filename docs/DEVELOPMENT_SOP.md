@@ -226,8 +226,8 @@ AI 代理在結束任務前，必須執行以下檢查：
     - 記錄到**該 Bug 所屬專案**的 `README.md` 最下方
     - 範例：
       - Oracle 遷移相關 Bug → `ktw-oracle-to-pg/README.md`
-      - LINE Bot Bug → `KTW-bot/LINEBOT/README.md`
-      - Admin-Web Bug → `KTW-bot/KTW-admin-web/README.md`
+      - LINE Bot Bug → `ktw-bot/LINEBOT/README.md`
+      - Admin-Web Bug → `ktw-bot/ktw-admin-web/README.md`
 
     **記錄格式**：
 
@@ -282,8 +282,8 @@ AI 代理在結束任務前，必須執行以下檢查：
       ```
       /CHANGELOG.md              ← 統整所有模組 (簡潔格式)
       /LINEBOT/CHANGELOG.md      ← LINE Bot 詳細記錄
-      /KTW-admin-web/CHANGELOG.md ← Admin Dashboard 詳細記錄
-      /KTW-backend/CHANGELOG.md  ← Backend API 詳細記錄
+      /ktw-admin-web/CHANGELOG.md ← Admin Dashboard 詳細記錄
+      /ktw-backend/CHANGELOG.md  ← Backend API 詳細記錄
       /pms-api/CHANGELOG.md      ← PMS API 詳細記錄
       ```
 

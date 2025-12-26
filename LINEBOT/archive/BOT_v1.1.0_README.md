@@ -51,7 +51,7 @@ KTW Hotel LINE Bot 是一個智能旅館客服系統，整合了 LINE Messaging 
 ---
 
 ### 3. 房型對照表獨立管理
-**檔案位置**：`/Users/ktw/ktw-projects/KTW-bot/room_types.json`
+**檔案位置**：`/Users/ktw/ktw-projects/ktw-bot/room_types.json`
 
 **優點**：
 - ✅ 新增或修改房型無需修改程式碼
@@ -204,12 +204,12 @@ graph TB
 
 | 檔案 | 功能 | 位置 |
 |:---|:---|:---|
-| `app.py` | Flask 主程式，處理 LINE Webhook | `/Users/ktw/ktw-projects/KTW-bot/` |
-| `bot.py` | Bot 核心邏輯，對話管理 | `/Users/ktw/ktw-projects/KTW-bot/` |
-| `pms_client.py` | PMS API 客戶端 | `/Users/ktw/ktw-projects/KTW-bot/` |
-| `room_types.json` | 房型對照表 ⭐ 新增 | `/Users/ktw/ktw-projects/KTW-bot/` |
-| `admin_dashboard.py` | 管理後台 | `/Users/ktw/ktw-projects/KTW-bot/` |
-| `CHANGELOG.md` | 版本變更記錄 ⭐ 新增 | `/Users/ktw/ktw-projects/KTW-bot/` |
+| `app.py` | Flask 主程式，處理 LINE Webhook | `/Users/ktw/ktw-projects/ktw-bot/` |
+| `bot.py` | Bot 核心邏輯，對話管理 | `/Users/ktw/ktw-projects/ktw-bot/` |
+| `pms_client.py` | PMS API 客戶端 | `/Users/ktw/ktw-projects/ktw-bot/` |
+| `room_types.json` | 房型對照表 ⭐ 新增 | `/Users/ktw/ktw-projects/ktw-bot/` |
+| `admin_dashboard.py` | 管理後台 | `/Users/ktw/ktw-projects/ktw-bot/` |
+| `CHANGELOG.md` | 版本變更記錄 ⭐ 新增 | `/Users/ktw/ktw-projects/ktw-bot/` |
 
 ---
 
@@ -217,19 +217,19 @@ graph TB
 
 ### 啟動 Bot 服務
 ```bash
-cd /Users/ktw/ktw-projects/KTW-bot
+cd /Users/ktw/ktw-projects/ktw-bot
 python3 app.py
 ```
 
 ### 啟動管理後台
 ```bash
-cd /Users/ktw/ktw-projects/KTW-bot
+cd /Users/ktw/ktw-projects/ktw-bot
 python3 admin_dashboard.py
 ```
 
 ### 重新啟動腳本
 ```bash
-cd /Users/ktw/ktw-projects/KTW-bot
+cd /Users/ktw/ktw-projects/ktw-bot
 ./restart.sh
 ```
 
@@ -238,7 +238,7 @@ cd /Users/ktw/ktw-projects/KTW-bot
 ## 🔗 相關連結
 
 - **PMS API 文檔**：參見 `PMS API v1.6 技術文檔`（獨立文件）
-- **GitHub**：https://github.com/kueitiwan-KTW/KTW-bot
+- **GitHub**：https://github.com/kueitiwan-KTW/ktw-bot
 - **Git Tag**：`bot-v1.1.0`
 
 ---

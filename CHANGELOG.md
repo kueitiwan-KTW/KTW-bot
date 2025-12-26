@@ -5,8 +5,8 @@
 ## 模組 CHANGELOG 連結
 
 - [LINE Bot](./LINEBOT/CHANGELOG.md) - LINE 客服機器人
-- [Admin Dashboard](./KTW-admin-web/CHANGELOG.md) - 管理後台
-- [Backend API](./KTW-backend/CHANGELOG.md) - 後端 API 服務
+- [Admin Dashboard](./ktw-admin-web/CHANGELOG.md) - 管理後台
+- [Backend API](./ktw-backend/CHANGELOG.md) - 後端 API 服務
 - [PMS API](./pms-api/CHANGELOG.md) - PMS 資料庫 API
 
 ---
@@ -20,7 +20,7 @@
 #### 詳細模組變更
 - [LINE Bot (v2.0.0)](./LINEBOT/CHANGELOG.md#200---2025-12-23)
 - [PMS API (v1.9.3)](./pms-api/CHANGELOG.md#193---2025-12-23)
-- [Admin Web (v1.3.1)](./KTW-admin-web/CHANGELOG.md#v131-2025-12-23)
+- [Admin Web (v1.3.1)](./ktw-admin-web/CHANGELOG.md#v131-2025-12-23)
 
 ---
 
@@ -138,8 +138,8 @@
 
 #### 詳細模組變更
 - [LINE Bot (v1.4.10)](./LINEBOT/CHANGELOG.md#1410---2025-12-19) - 流程優化、Bug 修復
-- [Backend API (v1.1.1)](./KTW-backend/CHANGELOG.md#111---2025-12-19) - 資料匹配、Display Name 整合
-- [Admin Web (v1.3.0)](./KTW-admin-web/CHANGELOG.md#v130-2025-12-19) - 佈局重構、變色標識
+- [Backend API (v1.1.1)](./ktw-backend/CHANGELOG.md#111---2025-12-19) - 資料匹配、Display Name 整合
+- [Admin Web (v1.3.0)](./ktw-admin-web/CHANGELOG.md#v130-2025-12-19) - 佈局重構、變色標識
 - [PMS API (v1.8.0)](./pms-api/CHANGELOG.md#180---2025-12-19) - Oracle 服務重啟
 
 ---
@@ -200,8 +200,8 @@
 
 ### 詳細變更
 - [LINE Bot CHANGELOG](./LINEBOT/CHANGELOG.md#120---2025-12-17)
-- [Admin Web CHANGELOG](./KTW-admin-web/CHANGELOG.md#v112-2025-12-17)
-- [Backend API CHANGELOG](./KTW-backend/CHANGELOG.md#101---2025-12-17)
+- [Admin Web CHANGELOG](./ktw-admin-web/CHANGELOG.md#v112-2025-12-17)
+- [Backend API CHANGELOG](./ktw-backend/CHANGELOG.md#101---2025-12-17)
 
 ---
 
@@ -228,7 +228,7 @@
 ### Admin Dashboard
 - **修復**: 客人卡片展開連動問題
 - **清理**: 移除調試代碼
-- 詳見: [KTW-admin-web/CHANGELOG.md](./KTW-admin-web/CHANGELOG.md#v111-2025-12-16)
+- 詳見: [ktw-admin-web/CHANGELOG.md](./ktw-admin-web/CHANGELOG.md#v111-2025-12-16)
 
 ---
 
@@ -238,7 +238,7 @@
 - **新增**: 真實 PMS API 數據整合
 - **新增**: 30 秒倒數計時器
 - **優化**: 差異化更新頻率
-- 詳見: [KTW-admin-web/CHANGELOG.md](./KTW-admin-web/CHANGELOG.md#v110-2025-12-15)
+- 詳見: [ktw-admin-web/CHANGELOG.md](./ktw-admin-web/CHANGELOG.md#v110-2025-12-15)
 
 ### LINE Bot
 - **新增**: 重新開始對話功能

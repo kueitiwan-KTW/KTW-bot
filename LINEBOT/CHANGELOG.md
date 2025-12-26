@@ -217,7 +217,7 @@
 ### ✨ 整合與故障排除
 
 #### 1. Admin Web 故障排除 (Critical)
-- **檔案**: `KTW-admin-web/src/App.vue` (L1)
+- **檔案**: `ktw-admin-web/src/App.vue` (L1)
 - **問題**: 第一行意外包含 Markdown 語法（三個反引號），導致 Vite 編譯失敗。
 - **修復**: 移除非法語法並重啟 PM2 服務。
 - **影響**: 恢復 Admin Dashboard 的正常訪問。
@@ -232,7 +232,7 @@
 ### ✨ 整合與故障排除
 
 #### 1. Admin Web 故障排除 (Critical)
-- **檔案**: `KTW-admin-web/src/App.vue` (L1)
+- **檔案**: `ktw-admin-web/src/App.vue` (L1)
 - **問題**: 第一行意外包含 Markdown 語法（三個反引號），導致 Vite 編譯失敗。
 - **修復**: 移除非法語法並重啟 PM2 服務。
 - **影響**: 恢復 Admin Dashboard 的正常訪問。
@@ -641,7 +641,7 @@
    - 在 `generate_response()` 路由邏輯中加入內部 VIP 功能分派
 
 #### Backend API 新增
-**檔案**: `KTW-backend/src/helpers/db.js`, `KTW-backend/src/index.js`
+**檔案**: `ktw-backend/src/helpers/db.js`, `ktw-backend/src/index.js`
 
 | 端點 | 方法 | 說明 |
 |:-----|:-----|:-----|
@@ -685,8 +685,8 @@ CREATE TABLE vip_users (
 - `handlers/web_search.py` [NEW] - 網路搜尋模組
 - `app.py` (L89-109) - VIP 狀態檢查整合
 - `bot.py` (L1434-1492) - 內部 VIP 路由邏輯
-- `KTW-backend/src/helpers/db.js` - VIP 資料表與 CRUD
-- `KTW-backend/src/index.js` - VIP API 端點
+- `ktw-backend/src/helpers/db.js` - VIP 資料表與 CRUD
+- `ktw-backend/src/index.js` - VIP API 端點
 
 ---
 
@@ -874,7 +874,7 @@ CREATE TABLE vip_users (
 ## [1.4.0] - 2025-12-18
 
 ### ✨ 新功能：同步至本地持久化資料庫
-- **pms_client.py**: 新增 `update_supplement` 方法，支援 PATCH 資料至本地 KTW-backend。
+- **pms_client.py**: 新增 `update_supplement` 方法，支援 PATCH 資料至本地 ktw-backend。
 - **order_query_handler.py**: 在 `_save_to_guest_orders` 流程中加入同步邏輯，將電話、抵達時間、AI 提取需求即時推送到後端 SQLite (L451-468)。
 
 ## [1.3.1] - 2025-12-18

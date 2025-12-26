@@ -8,7 +8,7 @@
 
 ```bash
 # 啟動所有服務 (Backend, PMS API, Admin, Bot, Ngrok)
-cd /Users/ktw/ktw-projects/KTW-bot
+cd /Users/ktw/ktw-projects/ktw-bot
 npx pm2 start ecosystem.config.js
 ```
 

@@ -153,7 +153,7 @@ BOT：✅ 已為您取消訂單！
 ## 檔案結構
 
 ```
-KTW-bot/
+ktw-bot/
 ├── same_day_booking.py      # 當日預訂對話狀態機
 ├── pms_client.py            # PMS API 客戶端
 ├── chat_logs/

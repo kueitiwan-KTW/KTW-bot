@@ -7,7 +7,7 @@
 ### A. 極致節省磁碟空間 (Content-Addressable Storage)
 *   **npm/yarn**：如果您有 10 個專案都用到 `React`，磁碟裡就會有 10 份相同的 `React` 代碼。
 *   **pnpm**：它會將所有的包儲存在全域的一個「單一實體存儲庫 (Global Store)」。
-*   **對您的意義**：您的 `KTW-backend`, `KTW-admin-web` 與未來的官網，如果重複使用相同的套件，硬碟只會佔用一份空間。
+*   **對您的意義**：您的 `ktw-backend`, `ktw-admin-web` 與未來的官網，如果重複使用相同的套件，硬碟只會佔用一份空間。
 
 ### B. 驚人的安裝速度 (Fast)
 *   pnpm 的安裝過程分為三個階段（解析、寫入快取、建立連結），且三個階段是**並行並非迭代**執行。
@@ -30,10 +30,10 @@ pnpm update -r
 pnpm test -r
 
 # 只在後端執行安裝
-pnpm --filter ./KTW-backend add lodash
+pnpm --filter ./ktw-backend add lodash
 ```
 
-## 3. 對於「KTW-bot」專案的具體提升
+## 3. 對於「ktw-bot」專案的具體提升
 
 | 現在 (npm) | 未來 (pnpm) |
 |:---|:---|

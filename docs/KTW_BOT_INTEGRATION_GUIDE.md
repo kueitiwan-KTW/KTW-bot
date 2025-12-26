@@ -1,4 +1,4 @@
-# 如何將 PMS 整合套件加入 KTW-bot Repository
+# 如何將 PMS 整合套件加入 ktw-bot Repository
 
 ## 📦 準備工作
 
@@ -15,30 +15,30 @@
 
 | 檔案名稱 | 用途 | 目標位置 |
 |---------|------|---------|
-| `PMS_INTEGRATION_SUMMARY.md` | **總覽文件**（最重要） | `KTW-bot/docs/` |
-| `pms_api_specification.md` | REST API 完整規格 | `KTW-bot/pms-api/` |
-| `PMS-DATABASE-REFERENCE.md` | 資料庫完整參考文件 | `KTW-bot/pms-api/` |
-| `bot_pms_integration_plan.md` | BOT 整合方案 | `KTW-bot/docs/` |
-| `task.md` | 任務清單 | `KTW-bot/docs/` |
-| `implementation_plan.md` | 實作計畫 | `KTW-bot/docs/` |
-| `oracle_access_guide.md` | Oracle 連線指南 | `KTW-bot/docs/oracle/` |
-| `oracle_connection_steps.md` | 連線步驟 | `KTW-bot/docs/oracle/` |
-| `oracle_sql_commands.md` | SQL 指令集 | `KTW-bot/docs/oracle/` |
-| `pms_data_access_plan.md` | 資料存取計畫 | `KTW-bot/docs/` |
-| `oracle_info_collector.bat` | 資訊收集工具 | `KTW-bot/tools/` |
+| `PMS_INTEGRATION_SUMMARY.md` | **總覽文件**（最重要） | `ktw-bot/docs/` |
+| `pms_api_specification.md` | REST API 完整規格 | `ktw-bot/pms-api/` |
+| `PMS-DATABASE-REFERENCE.md` | 資料庫完整參考文件 | `ktw-bot/pms-api/` |
+| `bot_pms_integration_plan.md` | BOT 整合方案 | `ktw-bot/docs/` |
+| `task.md` | 任務清單 | `ktw-bot/docs/` |
+| `implementation_plan.md` | 實作計畫 | `ktw-bot/docs/` |
+| `oracle_access_guide.md` | Oracle 連線指南 | `ktw-bot/docs/oracle/` |
+| `oracle_connection_steps.md` | 連線步驟 | `ktw-bot/docs/oracle/` |
+| `oracle_sql_commands.md` | SQL 指令集 | `ktw-bot/docs/oracle/` |
+| `pms_data_access_plan.md` | 資料存取計畫 | `ktw-bot/docs/` |
+| `oracle_info_collector.bat` | 資訊收集工具 | `ktw-bot/tools/` |
 
 ---
 
 ## 🚀 整合步驟
 
-### 方法 A：在 KTW-bot 建立新分支（建議）
+### 方法 A：在 ktw-bot 建立新分支（建議）
 
-#### 1. Clone KTW-bot repository（如果還沒 clone）
+#### 1. Clone ktw-bot repository（如果還沒 clone）
 
 ```bash
 cd ~/Projects  # 或您習慣的專案目錄
-git clone https://github.com/kueitiwan-KTW/KTW-bot.git
-cd KTW-bot
+git clone https://github.com/kueitiwan-KTW/ktw-bot.git
+cd ktw-bot
 ```
 
 #### 2. 建立新分支 `pms-integration`
@@ -100,7 +100,7 @@ git push origin pms-integration
 
 #### 6. 在 GitHub 建立 Pull Request
 
-1. 開啟 https://github.com/kueitiwan-KTW/KTW-bot
+1. 開啟 https://github.com/kueitiwan-KTW/ktw-bot
 2. 點選 "Pull requests" → "New pull request"
 3. Base: `main` ← Compare: `pms-integration`
 4. 建立 PR，標題：`[Feature] PMS 整合套件 - Oracle 資料庫與 REST API 規格`
@@ -110,7 +110,7 @@ git push origin pms-integration
 ### 方法 B：直接在 main 分支操作（不建議）
 
 ```bash
-cd KTW-bot
+cd ktw-bot
 git checkout main
 git pull origin main
 
@@ -124,10 +124,10 @@ git push origin main
 
 ---
 
-## 📁 最終的 KTW-bot 目錄結構
+## 📁 最終的 ktw-bot 目錄結構
 
 ```
-KTW-bot/
+ktw-bot/
 ├── docs/                                    ← 新增
 │   ├── PMS_INTEGRATION_SUMMARY.md          ← 從這份開始看
 │   ├── pms_api_specification.md
@@ -153,7 +153,7 @@ KTW-bot/
 
 ## 📝 更新 README.md（建議）
 
-在 `KTW-bot/README.md` 加入：
+在 `ktw-bot/README.md` 加入：
 
 ```markdown
 ## 📦 PMS 整合功能（開發中）
@@ -180,7 +180,7 @@ docs/              # 完整技術文件
 
 完成後請確認：
 
-- [ ] 所有 11 個文件已複製到 KTW-bot
+- [ ] 所有 11 個文件已複製到 ktw-bot
 - [ ] 目錄結構正確（docs/, docs/oracle/, tools/）
 - [ ] 已建立 Git 分支 `pms-integration`
 - [ ] 已提交變更並 push 到 GitHub

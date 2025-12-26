@@ -155,9 +155,9 @@ STATE_BOOKING_CONFIRM = 'booking.confirm'              # 確認預訂
 
 | 函數 | 用途 |
 |:-----|:-----|
-| `_load_from_backend(user_id)` | 從 KTW-backend API 載入 session |
-| `_sync_to_backend(user_id)` | 同步 session 到 KTW-backend API |
-| `_delete_from_backend(user_id)` | 從 KTW-backend 刪除 session |
+| `_load_from_backend(user_id)` | 從 ktw-backend API 載入 session |
+| `_sync_to_backend(user_id)` | 同步 session 到 ktw-backend API |
+| `_delete_from_backend(user_id)` | 從 ktw-backend 刪除 session |
 
 ---
 
@@ -393,7 +393,7 @@ _save_to_guest_orders() → 儲存到 JSON
     │   ├── data/chat_logs/guest_orders.json  → Bot 訂單記錄       │
     │   ├── data/chat_logs/conversations/     → 對話記錄           │
     │   ├── data/chat_logs/user_profiles.json → 用戶資料           │
-    │   └── KTW-backend SQLite                → 擴充資料持久化     │
+    │   └── ktw-backend SQLite                → 擴充資料持久化     │
     └───────────────────────────────────────────────────────────────┘
 ```
 

@@ -35,7 +35,7 @@ Oracle PMS 系統的 REST API 服務，為 LINE Bot 提供訂單查詢功能。
 
 1. **安裝依賴**
    ```powershell
-   cd C:\KTW-bot\pms-api
+   cd C:\ktw-bot\pms-api
    npm install
    ```
 

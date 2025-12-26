@@ -1,9 +1,9 @@
 # 版本變更記錄（合併範例）
 
 > 📌 **來源檔案**：
-> - `/Users/ktw/ktw-projects/KTW-bot/CHANGELOG.md`
-> - `/Users/ktw/ktw-projects/KTW-bot/pms-api/CHANGELOG.md`
-> - `/Users/ktw/ktw-projects/KTW-bot/pms-api-poc/API_CHANGELOG.md`
+> - `/Users/ktw/ktw-projects/ktw-bot/CHANGELOG.md`
+> - `/Users/ktw/ktw-projects/ktw-bot/pms-api/CHANGELOG.md`
+> - `/Users/ktw/ktw-projects/ktw-bot/pms-api-poc/API_CHANGELOG.md`
 
 ---
 
@@ -104,6 +104,6 @@
 
 ## 🔗 相關連結
 
-- 主專案倉庫：[KTW-bot](...)
+- 主專案倉庫：[ktw-bot](...)
 - PMS API 文檔：[技術文檔](...)
 - 部署指南：[部署手冊](...)

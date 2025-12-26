@@ -110,7 +110,7 @@ curl "http://192.168.8.3:3000/api/logs/today?level=ERROR"
 ### 🔧 部署管理標準化 (Operation Standards)
 
 1. **NSSM 服務管理標準化**
-   - **路徑**: `C:\KTW-bot\pms-api\nssm.exe`
+   - **路徑**: `C:\ktw-bot\pms-api\nssm.exe`
    - **內容**: 確認服務名稱為 `KTW_PMS_API`。
    - **異動**: 將重啟指令與工作流路徑更新為絕對路徑，確保 SSH 執行穩定性。
 

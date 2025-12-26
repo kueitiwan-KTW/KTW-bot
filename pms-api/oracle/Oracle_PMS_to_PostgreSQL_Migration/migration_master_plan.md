@@ -139,7 +139,7 @@ Node.js (`pms-api`) 需要做以下修改：
 3.  **Sum Check (金額總和稽核)**：
     - 對金額欄位 (`amount`) 進行 SUM 比對，確保小數位數 (Precision) 轉換無誤，財務報表數字吻合。
 4.  **功能與效能測試**：
-    - 執行 `KTW-backend` 的關鍵流程 (入住、退房、查詢)，確認 API 回傳正確。
+    - 執行 `ktw-backend` 的關鍵流程 (入住、退房、查詢)，確認 API 回傳正確。
     - 針對重度查詢 (如報表) 執行 EXPLAIN ANALYZE，確認索引是否有效。
 
 ### 階段六：切換後的開發與維運 (Post-Migration Development)
@@ -147,9 +147,9 @@ Node.js (`pms-api`) 需要做以下修改：
 **目標：** 在完成資料庫遷移後，無縫接軌開發工作，並確保 BOT 與 ADMIN 能即刻使用新資料庫。
 
 1.  **架構優勢利用 (Architecture Benefit)**：
-    目前系統架構為 `Oracle DB` -> `pms-api` -> `KTW-backend` -> `Line Bot / Admin Web`。
+    目前系統架構為 `Oracle DB` -> `pms-api` -> `ktw-backend` -> `Line Bot / Admin Web`。
     - **關鍵策略**：我們只需 **重寫 `pms-api` 的資料存取層 (DAO)** 改接 PostgreSQL。
-    - **極大優勢**：只要 `pms-api` 的 **API 輸出格式 (JSON)** 維持不變，上層的 `KTW-backend` (BOT核心) 和 `KTW-admin-web` (後台) **完全不需要大幅修改**，即可無痛切換。
+    - **極大優勢**：只要 `pms-api` 的 **API 輸出格式 (JSON)** 維持不變，上層的 `ktw-backend` (BOT核心) 和 `ktw-admin-web` (後台) **完全不需要大幅修改**，即可無痛切換。
 
 2.  **開發環境配置**：
     - 將開發機 (Local) 的 `DB_CONNECTION` 字串從 Oracle 改為 PostgreSQL。

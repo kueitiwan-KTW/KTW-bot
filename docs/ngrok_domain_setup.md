@@ -34,7 +34,7 @@
 ## 第三步：修改啟動設定 (ecosystem.config.js)
 當上述兩步都完成且 DNS 生效後，請回到這台主機修改設定，讓 Ngrok 知道要使用這個網域。
 
-1.  開啟 `/Users/ktw/ktw-projects/KTW-bot/ecosystem.config.js`。
+1.  開啟 `/Users/ktw/ktw-projects/ktw-bot/ecosystem.config.js`。
 2.  找到 `Ngrok-Tunnel` 的設定區塊，修改 `args` 參數：
 
 ```javascript

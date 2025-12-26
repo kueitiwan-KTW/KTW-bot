@@ -54,7 +54,7 @@ ssh Administrator@192.168.8.3 "cd C:\pms-api && node test.js"
 
 將整個 `PMS-API-SSH` 資料夾複製到 Windows Server 上：
 ```
-C:\KTW-bot\PMS-API-SSH
+C:\ktw-bot\PMS-API-SSH
 ```
 
 ### 步驟 2：啟用 SSH（如未啟用）

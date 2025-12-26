@@ -80,7 +80,7 @@ if state != 'idle':
 **修復**：新增查詢 `bot_sessions` 表
 
 ```javascript
-// KTW-backend/src/index.js
+// ktw-backend/src/index.js
 async function processBookings(bookings, guestOrders, profiles = {}) {
     // 🔧 新增：查詢進行中的 Bot Sessions
     let activeSessions = [];

@@ -9,12 +9,12 @@
 2. 解壓縮檔案。
 3. 進入 `win64` 資料夾。
 4. 將 `nssm.exe` 複製到您的專案目錄：
-   - 目標位置：`C:\KTW-bot\pms-api\nssm.exe`
+   - 目標位置：`C:\ktw-bot\pms-api\nssm.exe`
 
 ## 💿 步驟 2：安裝服務
 
 1. 以 **系統管理員身分** 開啟檔案總管。
-2. 進入 `C:\KTW-bot\pms-api`。
+2. 進入 `C:\ktw-bot\pms-api`。
 3. 右鍵點擊 `install-service.bat`，選擇 **「以系統管理員身分執行」**。
 4. 等待腳本執行完成，出現 "SUCCESS" 字樣。
 
@@ -31,4 +31,4 @@
 
 - **停止服務**：`net stop KTW_PMS_API` (管理員權限 CMD)
 - **啟動服務**：`net start KTW_PMS_API`
-- **查看日誌**：`C:\KTW-bot\pms-api\logs\service.log`
+- **查看日誌**：`C:\ktw-bot\pms-api\logs\service.log`
