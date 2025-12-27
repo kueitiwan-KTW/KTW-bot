@@ -773,10 +773,11 @@ class HotelBot:
         """
         處理語音訊息：
         1. 儲存音訊檔案
-        2. 使用 Gemini 聽打 (Transcribe)
+        2. 使用 OpenAI Whisper API 轉文字（比 Gemini 更準確，無幻覺問題）
         3. 將文字送入 generate_response 處理
         """
         import tempfile
+        from openai import OpenAI
         
         print(f"🎤 收到來自 {display_name} ({user_id}) 的語音訊息")
         
@@ -788,26 +789,34 @@ class HotelBot:
             tmp_path = tmp_file.name
             
         try:
-            # 2. Upload to Gemini
-            print(f"📤 上傳音訊到 Gemini: {tmp_path}")
-            audio_file = genai.upload_file(path=tmp_path)
+            # 2. 使用 OpenAI Whisper API 轉文字
+            openai_key = os.getenv("OPENAI_API_KEY")
+            if not openai_key:
+                print("❌ OPENAI_API_KEY 未設定")
+                return "抱歉，語音服務暫時無法使用，請用文字輸入。"
             
-            # 3. Transcribe
-            # Note: We use the Flash model because it's fast and multimodal
-            prompt = "請仔細聆聽這段音訊，並將其精確轉寫為繁體中文（台灣用語）。只需輸出純文字，不要加入任何說明、標點符號以外的額外內容。"
+            client = OpenAI(api_key=openai_key)
             
-            response = self.model.generate_content([prompt, audio_file])
-            transcribed_text = response.text.strip()
+            print(f"📤 上傳音訊到 OpenAI Whisper: {tmp_path}")
+            with open(tmp_path, "rb") as audio_file:
+                transcript = client.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=audio_file,
+                    language="zh",  # 指定繁體中文
+                    response_format="text"
+                )
             
-            print(f"📝 語音轉文字結果: {transcribed_text}")
+            transcribed_text = transcript.strip() if isinstance(transcript, str) else transcript.text.strip()
+            
+            print(f"📝 語音轉文字結果 (Whisper): {transcribed_text}")
             
             if not transcribed_text:
                 return "抱歉，我聽不太清楚您的語音訊息，可以請您用文字再說一次嗎？"
                 
-            # 4. Log the voice message
+            # 3. Log the voice message
             self.logger.log(user_id, "User (Voice)", transcribed_text)
             
-            # 5. Process as Text
+            # 4. Process as Text
             return self.generate_response(transcribed_text, user_id, display_name)
             
         except Exception as e:

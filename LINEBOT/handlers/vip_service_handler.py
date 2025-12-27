@@ -79,7 +79,11 @@ class VIPServiceHandler(BaseHandler):
         return self.ROLE_TITLES.get(role, '長官')
     
     def handle_message(self, user_id: str, message: str, display_name: str = None) -> Optional[str]:
-        """處理文字訊息 (重構版)"""
+        """處理文字訊息 (重構版)
+        
+        注意：一般問答（天氣、景點等）會回傳 None，交回主流程處理
+        以啟用 Function Calling（如 get_weather_forecast）
+        """
         # 只處理內部 VIP
         if not self.is_internal(user_id):
             return None
@@ -114,8 +118,9 @@ class VIPServiceHandler(BaseHandler):
                 result = web_search.search(query, role_title)
                 return result.get('message')
         
-        # 5. AI 自由對話 (Fallback)
-        return self._free_chat(message, role_title)
+        # 5. 一般問答（天氣、景點等）- 交回主流程處理
+        # 回傳 None 讓 bot.py 的 generate_response 處理，以啟用 Function Calling
+        return None
     
     def _handle_pms_query(self, message: str, role_title: str) -> Optional[str]:
         """
