@@ -57,6 +57,11 @@ def push_notification(notification_type, data):
 def callback():
     # get X-Line-Signature header value
     signature = request.headers.get('X-Line-Signature')
+    
+    # Check if signature exists
+    if not signature:
+        print("Missing X-Line-Signature header")
+        abort(400)
 
     # get request body as text
     body = request.get_data(as_text=True)

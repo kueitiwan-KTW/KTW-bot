@@ -40,6 +40,7 @@ module.exports = {
       watch: false,
       env: {
         PYTHONPATH: "..:../shared",
+        PORT: 5001,
       },
     },
     {
@@ -58,6 +59,26 @@ module.exports = {
       env: {
         PORT: 3002,
       },
+    },
+    {
+      name: "PBX-Monitor",
+      script: "python3",
+      args: "-u pbx_monitor.py",
+      cwd: "../ktw-oracle-to-pg/scripts/nec_pms",
+      watch: false,
+      autorestart: true,
+      max_restarts: 10,
+      restart_delay: 5000,
+    },
+    {
+      name: "oracle-log-monitor",
+      script: "python3",
+      args: "-u tail_windows_log.py -f",
+      cwd: "../ktw-oracle-to-pg/scripts/export",
+      watch: false,
+      autorestart: true,
+      max_restarts: 10,
+      restart_delay: 5000,
     },
   ],
 };
