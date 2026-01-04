@@ -4,6 +4,71 @@
 
 ---
 
+## [2.0.2] - 2026-01-04
+
+### 🔧 LINE Bot Webhook 修復與 PM2 配置優化
+
+#### 1. Webhook Signature 驗證修正
+
+**檔案**: `LINEBOT/app.py` (L56-64)
+
+- **問題**: 當 Webhook 請求缺少 `X-Line-Signature` header 時，Bot 會拋出 `AttributeError` 導致崩潰
+- **修復**: 加入 signature 存在性檢查，缺少時直接回傳 400 錯誤
+- **影響**: 提升 Bot 穩定性，避免測試請求或異常請求導致服務中斷
+
+```python
+# 檢查 signature 是否存在
+signature = request.headers.get('X-Line-Signature')
+if signature is None:
+    print("❌ 缺少 X-Line-Signature header")
+    abort(400)
+```
+
+#### 2. Port 衝突解決
+
+**檔案**: `ecosystem.config.js` (L41-48)
+
+- **問題**: macOS AirPlay Receiver 佔用 Port 5000，導致 Bot 無法啟動
+- **修復**:
+  - Line-Bot-Py 改用 Port 5001
+  - Ngrok-Tunnel 同步指向 Port 5001
+  - 更新環境變數配置
+
+#### 3. PM2 服務新增
+
+**檔案**: `ecosystem.config.js`
+
+新增兩個監控服務至 PM2 管理：
+
+**PBX-Monitor** (L63-72)
+
+```javascript
+{
+  name: "PBX-Monitor",
+  script: "python3",
+  args: "-u pbx_monitor.py",  // -u: unbuffered 模式
+  cwd: "../ktw-oracle-to-pg/scripts/nec_pms",
+}
+```
+
+**oracle-log-monitor** (L73-82)
+
+```javascript
+{
+  name: "oracle-log-monitor",
+  script: "python3",
+  args: "-u tail_windows_log.py -f",
+  cwd: "../ktw-oracle-to-pg/scripts/export",
+}
+```
+
+### 📝 修改的文件
+
+- `LINEBOT/app.py` (L56-64) - Webhook signature 驗證修正
+- `ecosystem.config.js` (L40-82) - Port 調整與新增監控服務
+
+---
+
 ## [2.0.1] - 2025-12-27
 
 ### 🎤 語音辨識升級：OpenAI Whisper
