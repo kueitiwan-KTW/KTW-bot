@@ -61,9 +61,9 @@ module.exports = {
       },
     },
     {
-      name: "PBX-Monitor",
+      name: "Transfer-SMS",
       script: "python3",
-      args: "-u pbx_monitor.py",
+      args: "-u transfer_sms.py",
       cwd: "../ktw-oracle-to-pg/scripts/nec_pms",
       watch: false,
       autorestart: true,
