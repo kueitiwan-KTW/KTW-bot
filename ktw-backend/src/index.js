@@ -22,6 +22,29 @@ const app = express();
 const PORT = 3000;
 const WS_PORT = 3001;
 
+// ============================================
+// fetchWithRetry: 自動重試機制
+// ============================================
+async function fetchWithRetry(url, options = {}, retries = 2, delay = 1000) {
+    for (let i = 0; i <= retries; i++) {
+        try {
+            const response = await fetch(url, {
+                signal: AbortSignal.timeout(options.timeout || 5000),
+                ...options
+            });
+            return response;
+        } catch (error) {
+            if (i === retries) {
+                throw error; // 最後一次重試仍失敗，拋出錯誤
+            }
+            console.log(`⚠️ 請求失敗 (${error.code || error.message})，${delay}ms 後重試... (${i + 1}/${retries})`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            delay *= 2; // 指數退避
+        }
+    }
+}
+
+
 // Bot 的 guest_orders.json 路徑
 const GUEST_ORDERS_PATH = join(__dirname, '../../data/chat_logs/guest_orders.json');
 
@@ -588,9 +611,12 @@ app.get('/api/pms/yesterday-checkin', async (req, res) => {
 app.get('/api/pms/checkin-by-offset/:offset', async (req, res) => {
     try {
         const offset = req.params.offset;
-        const response = await fetch(`http://192.168.8.3:3000/api/bookings/checkin-by-date?offset=${offset}`, {
-            signal: AbortSignal.timeout(5000)
-        });
+        // 使用 fetchWithRetry 自動重試
+        const response = await fetchWithRetry(
+            `http://192.168.8.3:3000/api/bookings/checkin-by-date?offset=${offset}`,
+            { timeout: 8000 },  // 增加 timeout 到 8 秒
+            2  // 最多重試 2 次
+        );
 
         if (response.ok) {
             const data = await response.json();
@@ -608,6 +634,7 @@ app.get('/api/pms/checkin-by-offset/:offset', async (req, res) => {
         res.status(500).json({ success: false, error: error.message, data: [] });
     }
 });
+
 
 // 取得房間狀態（清潔/停用）
 app.get('/api/pms/rooms/status', async (req, res) => {
