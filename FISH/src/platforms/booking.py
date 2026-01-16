@@ -29,6 +29,13 @@ class BookingPlatform(BasePlatform):
         "家庭六人房": "211358304",
     }
     
+    # 房型名稱對照（用於 UI 顯示）
+    ROOM_NAMES = {
+        "211358301": "低奢兩人房",
+        "211358302": "鄉村四人房", 
+        "211358304": "家庭六人房",
+    }
+    
     def __init__(self, config: dict):
         super().__init__(config)
         self.context: Optional[BrowserContext] = None
@@ -50,7 +57,7 @@ class BookingPlatform(BasePlatform):
             headless=headless,
             locale='zh-TW',
             timezone_id='Asia/Taipei',
-            viewport={'width': 1280, 'height': 800},
+            viewport={'width': 1280, 'height': 900},
         )
         
         self.page = self.context.pages[0] if self.context.pages else await self.context.new_page()
@@ -64,10 +71,10 @@ class BookingPlatform(BasePlatform):
             await self._playwright.stop()
         logger.info("Booking.com 瀏覽器已關閉")
     
-    def get_calendar_url(self) -> str:
-        """取得日曆頁面 URL"""
+    def get_calendar_url(self, lang: str = "xt") -> str:
+        """取得日曆頁面 URL（繁體中文版）"""
         hotel_id = self.config.get("hotel_id", "2113583")
-        return f"{self.BASE_URL}/hotel/hoteladmin/extranet_ng/manage/calendar/index.html?hotel_id={hotel_id}"
+        return f"{self.BASE_URL}/hotel/hoteladmin/extranet_ng/manage/calendar/index.html?hotel_id={hotel_id}&lang={lang}"
     
     async def navigate_to_calendar(self) -> bool:
         """導航到日曆頁面"""
@@ -76,7 +83,6 @@ class BookingPlatform(BasePlatform):
             await self.page.wait_for_load_state('networkidle')
             await self.page.wait_for_timeout(2000)
             
-            # 驗證是否在日曆頁面
             current_url = self.page.url
             if 'calendar' in current_url:
                 logger.info("已導航到 Booking.com 日曆頁面")
@@ -91,81 +97,326 @@ class BookingPlatform(BasePlatform):
             logger.error(f"導航到日曆頁面失敗: {e}")
             return False
     
-    async def select_room_type(self, room_id: str) -> bool:
+    async def open_group_edit(self, room_id: str = None) -> bool:
         """
-        選擇房型
+        開啟群組編輯彈窗
         
         Args:
-            room_id: 房型 ID（如 211358301）或房型名稱（如 低奢兩人房）
+            room_id: 房型 ID（可選），如果指定會嘗試開啟該房型的群組編輯
         """
-        # 如果傳入的是名稱，轉換為 ID
-        if room_id in self.ROOM_MAP:
-            room_id = self.ROOM_MAP[room_id]
-        
-        logger.info(f"選擇房型: {room_id}")
-        
         try:
-            # Booking.com 使用 select 元素
-            room_selector = self.page.locator('#room-selector-control')
+            # 點擊群組編輯按鈕
+            group_btn = self.page.locator('button:has-text("群組編輯")').first
             
-            if await room_selector.count() > 0:
-                await room_selector.select_option(value=room_id)
-                await self.page.wait_for_timeout(1000)
-                logger.info(f"已選擇房型: {room_id}")
+            if await group_btn.count() > 0:
+                await group_btn.click()
+                await self.page.wait_for_timeout(2000)
+                logger.info("已開啟群組編輯彈窗")
                 return True
             else:
-                logger.error("找不到房型選擇器")
+                logger.error("找不到群組編輯按鈕")
                 return False
             
         except Exception as e:
-            logger.error(f"選擇房型失敗: {e}")
+            logger.error(f"開啟群組編輯失敗: {e}")
             return False
     
-    async def click_bulk_edit(self) -> bool:
-        """點擊 Bulk edit 按鈕"""
-        try:
-            bulk_edit_btn = self.page.locator('button:has-text("Bulk edit")').first
-            
-            if await bulk_edit_btn.count() > 0:
-                await bulk_edit_btn.click()
-                await self.page.wait_for_timeout(1500)
-                logger.info("已點擊 Bulk edit")
-                return True
-            else:
-                logger.error("找不到 Bulk edit 按鈕")
-                return False
-            
-        except Exception as e:
-            logger.error(f"點擊 Bulk edit 失敗: {e}")
-            return False
-    
-    async def set_date_range(self, start_date: date, end_date: date) -> bool:
+    async def _click_section_by_text(self, text: str) -> bool:
+        """使用 JavaScript 點擊彈窗內指定文字的區塊"""
+        clicked = await self.page.evaluate(f'''() => {{
+            const modal = document.querySelector('[data-test-id="general-modal"]');
+            if (modal) {{
+                const btns = modal.querySelectorAll('button.cec0620c60');
+                for (const btn of btns) {{
+                    if (btn.innerText?.includes("{text}")) {{
+                        btn.click();
+                        return true;
+                    }}
+                }}
+            }}
+            return false;
+        }}''')
+        return clicked
+
+    async def _click_save_button(self) -> bool:
+        """點擊彈窗內的儲存變更按鈕"""
+        clicked = await self.page.evaluate('''() => {
+            const modal = document.querySelector('[data-test-id="general-modal"]');
+            if (modal) {
+                const btns = modal.querySelectorAll('button');
+                for (const btn of btns) {
+                    if (btn.innerText?.includes("儲存變更")) {
+                        btn.click();
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }''')
+        if clicked:
+            await self.page.wait_for_timeout(2000)
+        return clicked
+
+    async def _get_modal_locator(self):
+        """取得群組編輯彈窗的 locator"""
+        return self.page.locator('[data-test-id="general-modal"]').last
+
+
+    async def set_date_range_in_group_edit(self, start_date: date, end_date: date) -> bool:
         """
-        設定日期範圍
+        在群組編輯彈窗中設定日期範圍
         
-        注意：Booking.com 的日期選擇器需要進一步分析
+        Args:
+            start_date: 開始日期
+            end_date: 結束日期
         """
-        logger.info(f"設定日期範圍: {start_date} - {end_date}")
-        
         try:
-            # 找日期輸入框
-            date_input = self.page.locator('input[type="text"]').first
+            # 設定起始日
+            start_input = self.page.locator('input[value*="2026"]').first
+            if await start_input.count() > 0:
+                await start_input.fill(start_date.strftime('%Y-%m-%d'))
+                await self.page.wait_for_timeout(500)
             
-            if await date_input.count() > 0:
-                await date_input.click()
-                await self.page.wait_for_timeout(1000)
-                
-                # TODO: 根據實際 DOM 結構完善日期選擇
-                # Booking.com 可能有自定義日期選擇器
-                
-                logger.warning("日期選擇器需要進一步分析")
-                return True
+            # 設定截止日
+            end_input = self.page.locator('input[value*="2026"]').nth(1)
+            if await end_input.count() > 0:
+                await end_input.fill(end_date.strftime('%Y-%m-%d'))
+                await self.page.wait_for_timeout(500)
             
-            return False
+            logger.info(f"已設定日期範圍: {start_date} ~ {end_date}")
+            return True
             
         except Exception as e:
             logger.error(f"設定日期範圍失敗: {e}")
             return False
+    
+    async def expand_price_section(self) -> bool:
+        """展開價格區塊"""
+        try:
+            price_btn = self.page.locator('button:has-text("價格")').first
+            if await price_btn.count() > 0:
+                await price_btn.click()
+                await self.page.wait_for_timeout(1000)
+                logger.info("已展開價格區塊")
+                return True
+            else:
+                logger.warning("找不到價格區塊按鈕")
+                return False
+            
+        except Exception as e:
+            logger.error(f"展開價格區塊失敗: {e}")
+            return False
+    
+    async def set_price(self, price: float, rate_plan: str = "Standard Rate") -> bool:
+        """
+        設定房價
+        
+        Args:
+            price: 價格（TWD）
+            rate_plan: 房價方案名稱（預設 Standard Rate）
+        """
+        try:
+            # 選擇房價方案
+            rate_select = self.page.locator('select').filter(has_text='Standard Rate').first
+            if await rate_select.count() > 0:
+                await rate_select.select_option(label=rate_plan)
+                await self.page.wait_for_timeout(1000)
+            
+            # 輸入價格（找 TWD 旁邊的輸入框）
+            price_input = self.page.locator('input[type="text"]').filter(has=self.page.locator('text=TWD'))
+            if await price_input.count() == 0:
+                # 備用方式：找數字輸入框
+                price_input = self.page.locator('input[type="number"]').first
+            
+            if await price_input.count() > 0:
+                await price_input.fill(str(int(price)))
+                await self.page.wait_for_timeout(500)
+                logger.info(f"已設定價格: TWD {price}")
+                return True
+            else:
+                logger.error("找不到價格輸入框")
+                return False
+            
+        except Exception as e:
+            logger.error(f"設定價格失敗: {e}")
+            return False
+    
+    async def expand_inventory_section(self) -> bool:
+        """展開可售數量區塊"""
+        try:
+            inventory_btn = self.page.locator('button:has-text("可售數量")').first
+            if await inventory_btn.count() > 0:
+                await inventory_btn.click()
+                await self.page.wait_for_timeout(1000)
+                logger.info("已展開可售數量區塊")
+                return True
+            else:
+                logger.warning("找不到可售數量區塊按鈕")
+                return False
+            
+        except Exception as e:
+            logger.error(f"展開可售數量區塊失敗: {e}")
+            return False
+    
+    async def set_inventory(self, count: int) -> bool:
+        """
+        設定可售房量
+        
+        Args:
+            count: 可售房間數
+        """
+        try:
+            # 找數字輸入框
+            inventory_input = self.page.locator('input[type="number"]').first
+            
+            if await inventory_input.count() > 0:
+                await inventory_input.fill(str(count))
+                await self.page.wait_for_timeout(500)
+                logger.info(f"已設定可售數量: {count}")
+                return True
+            else:
+                logger.error("找不到可售數量輸入框")
+                return False
+            
+        except Exception as e:
+            logger.error(f"設定可售數量失敗: {e}")
+            return False
+    
+    async def expand_status_section(self) -> bool:
+        """展開房況區塊"""
+        try:
+            status_btn = self.page.locator('button:has-text("房況")').first
+            if await status_btn.count() > 0:
+                await status_btn.click()
+                await self.page.wait_for_timeout(1000)
+                logger.info("已展開房況區塊")
+                return True
+            else:
+                logger.warning("找不到房況區塊按鈕")
+                return False
+            
+        except Exception as e:
+            logger.error(f"展開房況區塊失敗: {e}")
+            return False
+    
+    async def set_room_status(self, status: str = "open") -> bool:
+        """
+        設定房型狀態
+        
+        Args:
+            status: "open" 開放 或 "close" 關閉
+        """
+        try:
+            if status == "open":
+                open_btn = self.page.locator('text=開放').first
+                if await open_btn.count() > 0:
+                    await open_btn.click()
+            else:
+                close_btn = self.page.locator('text=關閉').first
+                if await close_btn.count() > 0:
+                    await close_btn.click()
+            
+            await self.page.wait_for_timeout(500)
+            logger.info(f"已設定房況: {status}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"設定房況失敗: {e}")
+            return False
+    
+    async def save_group_edit(self) -> bool:
+        """儲存群組編輯變更"""
+        try:
+            save_btn = self.page.locator('button:has-text("儲存變更")').first
+            
+            if await save_btn.count() > 0:
+                await save_btn.click()
+                await self.page.wait_for_timeout(3000)
+                logger.info("已儲存群組編輯變更")
+                return True
+            else:
+                logger.error("找不到儲存變更按鈕")
+                return False
+            
+        except Exception as e:
+            logger.error(f"儲存變更失敗: {e}")
+            return False
+    
+    async def cancel_group_edit(self) -> bool:
+        """取消群組編輯"""
+        try:
+            cancel_btn = self.page.locator('button:has-text("取消")').first
+            
+            if await cancel_btn.count() > 0:
+                await cancel_btn.click()
+                await self.page.wait_for_timeout(1000)
+                logger.info("已取消群組編輯")
+                return True
+            
+            return False
+            
+        except Exception as e:
+            logger.error(f"取消群組編輯失敗: {e}")
+            return False
+    
+    async def batch_update(
+        self,
+        room_type: str,
+        start_date: date,
+        end_date: date,
+        price: float = None,
+        inventory: int = None,
+        status: str = None
+    ) -> bool:
+        """
+        批次更新房型資訊
+        
+        Args:
+            room_type: 房型 ID 或名稱
+            start_date: 開始日期
+            end_date: 結束日期
+            price: 價格（可選）
+            inventory: 可售房量（可選）
+            status: 房況 "open"/"close"（可選）
+        """
+        try:
+            # 導航到日曆頁面
+            if not await self.navigate_to_calendar():
+                return False
+            
+            # 開啟群組編輯
+            if not await self.open_group_edit():
+                return False
+            
+            # 設定日期範圍
+            await self.set_date_range_in_group_edit(start_date, end_date)
+            
+            # 設定價格
+            if price is not None:
+                await self.expand_price_section()
+                await self.set_price(price)
+            
+            # 設定可售數量
+            if inventory is not None:
+                await self.expand_inventory_section()
+                await self.set_inventory(inventory)
+            
+            # 設定房況
+            if status is not None:
+                await self.expand_status_section()
+                await self.set_room_status(status)
+            
+            # 儲存變更
+            await self.save_group_edit()
+            
+            logger.info(f"批次更新完成: {room_type} / {start_date} ~ {end_date}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"批次更新失敗: {e}")
+            return False
+    
+    # 以下為基類抽象方法的實作
     
     async def get_availability(self, start_date: date, end_date: date) -> List[RoomAvailability]:
         """取得房況"""
@@ -175,14 +426,8 @@ class BookingPlatform(BasePlatform):
             await self.navigate_to_calendar()
             
             availability = []
+            # TODO: 解析日曆表格取得房況資料
             
-            # 解析日曆表格
-            for room_name, room_id in self.ROOM_MAP.items():
-                await self.select_room_type(room_id)
-                await self.page.wait_for_timeout(1000)
-                
-                # TODO: 解析日曆表格資料
-                
             logger.warning("Booking.com get_availability 尚未完整實作")
             return availability
             
@@ -192,73 +437,27 @@ class BookingPlatform(BasePlatform):
     
     async def update_price(self, room_type: str, target_date: date, price: float) -> bool:
         """更新房價"""
-        logger.info(f"更新 Booking.com 房價: {room_type} / {target_date} = {price}")
-        
-        try:
-            await self.navigate_to_calendar()
-            await self.select_room_type(room_type)
-            await self.click_bulk_edit()
-            
-            # TODO: 在 Bulk edit 彈窗中設定價格
-            
-            logger.warning("Booking.com update_price 尚未完整實作")
-            return False
-            
-        except Exception as e:
-            logger.error(f"更新房價失敗: {e}")
-            return False
+        return await self.batch_update(
+            room_type=room_type,
+            start_date=target_date,
+            end_date=target_date,
+            price=price
+        )
     
     async def update_inventory(self, room_type: str, target_date: date, count: int) -> bool:
         """更新庫存"""
-        logger.info(f"更新 Booking.com 庫存: {room_type} / {target_date} = {count}")
-        
-        try:
-            await self.navigate_to_calendar()
-            await self.select_room_type(room_type)
-            await self.click_bulk_edit()
-            
-            # TODO: 在 Bulk edit 彈窗中設定庫存
-            
-            logger.warning("Booking.com update_inventory 尚未完整實作")
-            return False
-            
-        except Exception as e:
-            logger.error(f"更新庫存失敗: {e}")
-            return False
-    
-    async def set_room_status(self, room_type: str, start_date: date, end_date: date, 
-                               status: str = "bookable") -> bool:
-        """
-        設定房型狀態
-        
-        Args:
-            room_type: 房型 ID 或名稱
-            start_date: 開始日期
-            end_date: 結束日期
-            status: bookable 或 not_bookable
-        """
-        logger.info(f"設定房型狀態: {room_type} / {start_date}-{end_date} = {status}")
-        
-        try:
-            await self.navigate_to_calendar()
-            await self.select_room_type(room_type)
-            await self.click_bulk_edit()
-            
-            # TODO: 在 Bulk edit 彈窗中設定狀態
-            
-            logger.warning("Booking.com set_room_status 尚未完整實作")
-            return False
-            
-        except Exception as e:
-            logger.error(f"設定房型狀態失敗: {e}")
-            return False
+        return await self.batch_update(
+            room_type=room_type,
+            start_date=target_date,
+            end_date=target_date,
+            inventory=count
+        )
     
     async def get_bookings(self, start_date: date, end_date: date) -> List[Booking]:
         """取得訂單列表"""
         logger.info(f"取得 Booking.com 訂單: {start_date} ~ {end_date}")
         
         try:
-            # 導航到訂單頁面
             hotel_id = self.config.get("hotel_id", "2113583")
             await self.page.goto(
                 f"{self.BASE_URL}/hotel/hoteladmin/extranet_ng/manage/booking_list.html?hotel_id={hotel_id}"
@@ -266,7 +465,6 @@ class BookingPlatform(BasePlatform):
             await self.page.wait_for_load_state('networkidle')
             
             bookings = []
-            
             # TODO: 解析訂單列表
             
             logger.warning("Booking.com get_bookings 尚未完整實作")
